@@ -43,8 +43,9 @@ Bowser is a SSH daemon built to be a more secure and auditable version of the st
 - [x] Basic SSH daemon
 - [x] Basic Console logging
 - [x] MFA
-- [ ] Adding accounts (CLI)
-- [ ] Proper logging / file based logging
-- [ ] SQLite for logging sessions
+- [x] Proper logging / file based logging
+- [x] SQLite for logging sessions
 - [ ] Slack webhook
 - [ ] Discord webhook
+- [ ] Adding accounts (CLI)
+- [ ] Proper recording/replay

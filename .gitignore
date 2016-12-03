@@ -1,3 +1,4 @@
 *.json
 id_rsa
-logs/
+recordings/
+*.db

@@ -23,7 +23,7 @@ type Config struct {
 	Bind          string `json:"bind"`
 	Accounts      string `json:"accounts"`
 	IDRSA         string `json:"id_rsa"`
-	LogFile       string `json:"log_file"`
+	DBPath        string `json:"db_path"`
 	RecordingPath string `json:"recording_path"`
 }
 
@@ -37,7 +37,7 @@ func LoadConfig(path string) (*Config, error) {
 		Bind:          "localhost:2200",
 		Accounts:      "accounts.json",
 		IDRSA:         "id_rsa",
-		LogFile:       "output.log",
+		DBPath:        "records.db",
 		RecordingPath: "recordings/",
 	}
 
