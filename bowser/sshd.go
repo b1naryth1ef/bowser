@@ -214,17 +214,11 @@ func (s *SSHSession) handleChannels(chans <-chan ssh.NewChannel) {
 }
 
 func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
-	// Since we're handling a shell, we expect a
-	// channel type of "session". The also describes
-	// "x11", "direct-tcpip" and "forwarded-tcpip"
-	// channel types.
 	if t := newChannel.ChannelType(); t != "session" {
 		newChannel.Reject(ssh.UnknownChannelType, fmt.Sprintf("unknown channel type: %s", t))
 		return
 	}
 
-	// At this point, we have the opportunity to reject the client's
-	// request for another logical connection
 	connection, requests, err := newChannel.Accept()
 	if err != nil {
 		log.Printf("Could not accept channel (%s)", err)
@@ -235,10 +229,10 @@ func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
 	term.Write([]byte(fmt.Sprintf("Session %v opened\r\n", s.UUID)))
 	term.Write([]byte(s.State.Config.MOTD + "\r\n"))
 
+	// Query and validate MFA
 	valid := false
 
 	for i := 0; i < 3; i++ {
-		// Query and validate MFA
 		term.Write([]byte("MFA Code: "))
 		line, err := term.ReadLine()
 
@@ -252,12 +246,13 @@ func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
 		}
 	}
 
+	// Close connection if its not valid
 	if !valid {
 		connection.Close()
 		return
 	}
 
-	// Fire up bash for this session
+	// Start shell session
 	bash := exec.Command(s.Account.Shell)
 
 	// Prepare teardown function
@@ -306,7 +301,6 @@ func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
 			if s.LogFile != nil {
 				s.LogFile.Write(buffer[:size])
 			}
-			// io.Copy(bashf, connection)
 		}
 
 		once.Do(close)
