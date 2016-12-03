@@ -17,6 +17,7 @@ import (
 	"github.com/kr/pty"
 	"github.com/pquerna/otp/totp"
 	"github.com/satori/go.uuid"
+	"github.com/uber-go/zap"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/terminal"
 )
@@ -47,36 +48,40 @@ func (key *AccountKey) ID() string {
 }
 
 type SSHSession struct {
-	UUID    uuid.UUID
-	State   *SSHDState
-	Account *Account
-	Conn    *ssh.ServerConn
-	LogFile *os.File
+	UUID          string
+	State         *SSHDState
+	Account       *Account
+	Conn          *ssh.ServerConn
+	RecordingFile *os.File
+	log           zap.Logger
 }
 
 func NewSSHSession(state *SSHDState, conn *ssh.ServerConn) *SSHSession {
 	id := uuid.NewV4()
 
 	strID, _ := id.MarshalText()
-	file, err := os.Create(state.Config.LogPath + "/" + string(strID) + ".log")
+	path := state.Config.RecordingPath + string(strID) + ".rec"
+	file, err := os.Create(path)
 
 	// This is ok, we null check below
 	if err != nil {
-		log.Printf("[WARNING] Couldn't create log file: %v", err)
+		state.log.Warn("Couldn't create recording file", zap.Error(err), zap.String("path", path))
 	}
 
 	return &SSHSession{
-		UUID:    id,
-		State:   state,
-		Account: state.accounts[conn.User()],
-		Conn:    conn,
-		LogFile: file,
+		UUID:          string(strID),
+		State:         state,
+		Account:       state.accounts[conn.User()],
+		Conn:          conn,
+		RecordingFile: file,
+		log:           state.log,
 	}
 }
 
 type SSHDState struct {
 	Config *Config
 
+	log      zap.Logger
 	accounts map[string]*Account
 	keys     map[string]*AccountKey
 }
@@ -88,12 +93,22 @@ func NewSSHDState() *SSHDState {
 		log.Panicf("Failed to load config: %v", err)
 	}
 
+	f, err := os.Create(config.LogFile)
+
+	if err != nil {
+		log.Panicf("Failed to open logfile: %v", err)
+	}
+
 	state := SSHDState{
 		Config: config,
+		log: zap.New(
+			zap.NewJSONEncoder(),
+			zap.Output(f),
+		),
 	}
 
 	// Ensure the logpath exists
-	os.Mkdir(state.Config.LogPath, 0777)
+	os.Mkdir(state.Config.RecordingPath, 0770)
 
 	state.reloadAccounts()
 	return &state
@@ -102,7 +117,7 @@ func NewSSHDState() *SSHDState {
 func (s *SSHDState) reloadAccounts() {
 	rawAccounts, err := LoadAccounts(s.Config.Accounts)
 	if err != nil {
-		log.Printf("[ERROR] Failed to load accounts: %v", err)
+		s.log.Error("Failed to load accounts", zap.Error(err))
 		return
 	}
 
@@ -111,7 +126,7 @@ func (s *SSHDState) reloadAccounts() {
 
 	for _, account := range rawAccounts {
 		if _, exists := accounts[account.Username]; exists {
-			log.Printf("[ERROR] Duplicate username %v", account.Username)
+			s.log.Error("Duplicate username", zap.String("username", account.Username))
 			return
 		}
 
@@ -120,13 +135,16 @@ func (s *SSHDState) reloadAccounts() {
 		for _, key := range account.SSHKeysRaw {
 			key, err := NewAccountKey(&account, []byte(key))
 			if err != nil {
-				log.Printf("[WARNING] Skipping key for account %v, could not parse: %v", account, err)
+				s.log.Warn(
+					"Skipping key for account, couldn't parse",
+					zap.Error(err),
+					zap.Object("account", account))
 				continue
 			}
 
 			other, exists := keys[key.ID()]
 			if exists {
-				log.Printf("[ERROR] Account %v shares a key with %v", other.Account, account)
+				s.log.Error("Duplicate key", zap.Object("account a", other.Account), zap.Object("account b", account))
 				return
 			}
 
@@ -190,13 +208,20 @@ func (s *SSHDState) Run() {
 		// Before use, a handshake must be performed on the incoming net.Conn.
 		sshConn, chans, reqs, err := ssh.NewServerConn(tcpConn, sshConfig)
 		if err != nil {
-			log.Printf("Failed to handshake (%s)", err)
+			s.log.Warn(
+				"Failed to handshake",
+				zap.String("user", sshConn.User()),
+				zap.String("remote", sshConn.RemoteAddr().String()),
+				zap.Error(err))
 			continue
 		}
 
 		session := NewSSHSession(s, sshConn)
 
-		log.Printf("New SSH connection from %s (%s)", sshConn.RemoteAddr(), sshConn.ClientVersion())
+		s.log.Info(
+			"New SSH connection",
+			zap.String("remote", sshConn.RemoteAddr().String()),
+			zap.String("version", string(sshConn.ClientVersion())))
 
 		// Discard all global out-of-band Requests
 		go ssh.DiscardRequests(reqs)
@@ -221,13 +246,15 @@ func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
 
 	connection, requests, err := newChannel.Accept()
 	if err != nil {
-		log.Printf("Could not accept channel (%s)", err)
+		s.log.Warn("Could not accept channel", zap.Error(err))
 		return
 	}
 
 	term := terminal.NewTerminal(connection, "")
 	term.Write([]byte(fmt.Sprintf("Session %v opened\r\n", s.UUID)))
 	term.Write([]byte(s.State.Config.MOTD + "\r\n"))
+
+	// TODO: Timeout here
 
 	// Query and validate MFA
 	valid := false
@@ -260,16 +287,20 @@ func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
 		connection.Close()
 		_, err := bash.Process.Wait()
 		if err != nil {
-			log.Printf("[%v] failed to exit shell: %v", s.UUID, err)
+			s.log.Warn(
+				"Failed to exit shell",
+				zap.Error(err),
+				zap.String("uuid", s.UUID))
 		}
-		log.Printf("[%v] session and shell closed", s.UUID)
+
+		s.log.Info("session and shell closed", zap.String("uuid", s.UUID))
 	}
 
 	// Allocate a terminal for this channel
-	log.Printf("[%v] shell %v created", s.UUID, s.Account.Shell)
+	s.log.Info("shell created", zap.String("uuid", s.UUID), zap.String("shell", s.Account.Shell))
 	bashf, err := pty.Start(bash)
 	if err != nil {
-		log.Printf("[%v] could not start pty: %v", s.UUID, err)
+		s.log.Warn("could not start pty", zap.String("uuid", s.UUID), zap.Error(err))
 		close()
 		return
 	}
@@ -298,8 +329,8 @@ func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
 			size, err = bashf.Read(buffer)
 			connection.Write(buffer[:size])
 
-			if s.LogFile != nil {
-				s.LogFile.Write(buffer[:size])
+			if s.RecordingFile != nil {
+				s.RecordingFile.Write(buffer[:size])
 			}
 		}
 

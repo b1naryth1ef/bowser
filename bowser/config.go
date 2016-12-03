@@ -19,11 +19,12 @@ type Account struct {
 }
 
 type Config struct {
-	MOTD     string `json:"motd"`
-	Bind     string `json:"bind"`
-	Accounts string `json:"accounts"`
-	IDRSA    string `json:"id_rsa"`
-	LogPath  string `json:"log_path"`
+	MOTD          string `json:"motd"`
+	Bind          string `json:"bind"`
+	Accounts      string `json:"accounts"`
+	IDRSA         string `json:"id_rsa"`
+	LogFile       string `json:"log_file"`
+	RecordingPath string `json:"recording_path"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -33,10 +34,11 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	result := Config{
-		Bind:     "localhost:2200",
-		Accounts: "accounts.json",
-		IDRSA:    "id_rsa",
-		LogPath:  "logs",
+		Bind:          "localhost:2200",
+		Accounts:      "accounts.json",
+		IDRSA:         "id_rsa",
+		LogFile:       "output.log",
+		RecordingPath: "recordings/",
 	}
 
 	err = json.Unmarshal(file, &result)
