@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
+	"net"
 	"os"
 	"os/exec"
 	"sync"
@@ -49,6 +51,7 @@ type SSHSession struct {
 	Account       *Account
 	Conn          *ssh.ServerConn
 	RecordingFile *os.File
+	Verified      bool
 	log           zap.Logger
 }
 
@@ -70,6 +73,7 @@ func NewSSHSession(state *SSHDState, conn *ssh.ServerConn) *SSHSession {
 		Account:       state.accounts[conn.User()],
 		Conn:          conn,
 		RecordingFile: file,
+		Verified:      false,
 		log:           state.log,
 	}
 }
@@ -82,11 +86,19 @@ func (s *SSHSession) handleChannels(chans <-chan ssh.NewChannel) {
 }
 
 func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
-	if t := newChannel.ChannelType(); t != "session" {
-		newChannel.Reject(ssh.UnknownChannelType, fmt.Sprintf("unknown channel type: %s", t))
+	switch newChannel.ChannelType() {
+	case "session":
+		s.handleChannelSession(newChannel)
+	case "direct-tcpip":
+		s.handleChannelForward(newChannel)
+	default:
+		log.Printf("Unhandled channel type: %v", newChannel.ChannelType())
+		newChannel.Reject(ssh.UnknownChannelType, fmt.Sprintf("unknown channel type"))
 		return
 	}
+}
 
+func (s *SSHSession) handleChannelSession(newChannel ssh.NewChannel) {
 	connection, requests, err := newChannel.Accept()
 	if err != nil {
 		s.log.Warn("Could not accept channel", zap.Error(err))
@@ -104,44 +116,43 @@ func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
 	term.Write([]byte(fmt.Sprintf("Session %v opened\r\n", s.UUID)))
 	term.Write([]byte(s.State.Config.MOTD + "\r\n"))
 
-	// Query and validate MFA
-	valid := false
+	if !s.Verified {
+		for i := 0; i < 3; i++ {
+			term.Write([]byte("MFA Code: "))
+			line, err := term.ReadLine()
 
-	for i := 0; i < 3; i++ {
-		term.Write([]byte("MFA Code: "))
-		line, err := term.ReadLine()
+			if err != nil {
+				break
+			}
 
-		if err != nil {
-			break
+			if totp.Validate(line, s.Account.MFA.TOTP) {
+				s.Verified = true
+				break
+			}
+
+			s.log.Warn(
+				"Invalid MFA entered",
+				zap.Object("uuid", s.UUID),
+				zap.Object("username", s.Account.Username),
+				zap.Object("connection", s.Conn.RemoteAddr()),
+				zap.String("code", line))
 		}
 
-		if totp.Validate(line, s.Account.MFA.TOTP) {
-			valid = true
-			break
+		loginAttemptID := s.State.db.insertLoginAttempt(s)
+
+		// Close connection if its not valid
+		if !s.Verified {
+			s.log.Warn(
+				"Connection closed for invalid MFA",
+				zap.Object("uuid", s.UUID),
+				zap.Object("username", s.Account.Username),
+				zap.Object("connection", s.Conn.RemoteAddr()))
+			connection.Close()
+			return
 		}
 
-		s.log.Warn(
-			"Invalid MFA entered",
-			zap.Object("uuid", s.UUID),
-			zap.Object("username", s.Account.Username),
-			zap.Object("connection", s.Conn.RemoteAddr()),
-			zap.String("code", line))
+		s.State.db.insertSession(s.UUID, loginAttemptID)
 	}
-
-	loginAttemptID := s.State.db.insertLoginAttempt(s)
-
-	// Close connection if its not valid
-	if !valid {
-		s.log.Warn(
-			"Connection closed for invalid MFA",
-			zap.Object("uuid", s.UUID),
-			zap.Object("username", s.Account.Username),
-			zap.Object("connection", s.Conn.RemoteAddr()))
-		connection.Close()
-		return
-	}
-
-	s.State.db.insertSession(s.UUID, loginAttemptID)
 
 	// Start shell session
 	bash := exec.Command(s.Account.Shell)
@@ -236,6 +247,8 @@ func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
 			case "window-change":
 				w, h := parseDims(req.Payload)
 				SetWinsize(bashf.Fd(), w, h)
+			default:
+				log.Printf("wtf: %s", req.Type)
 			}
 		}
 	}()
@@ -264,4 +277,48 @@ type Winsize struct {
 func SetWinsize(fd uintptr, w, h uint32) {
 	ws := &Winsize{Width: uint16(w), Height: uint16(h)}
 	syscall.Syscall(syscall.SYS_IOCTL, fd, uintptr(syscall.TIOCSWINSZ), uintptr(unsafe.Pointer(ws)))
+}
+
+type channelOpenDirectMsg struct {
+	RAddr string
+	RPort uint32
+	LAddr string
+	LPort uint32
+}
+
+func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
+	// Close the session right away if they aren't authed yet
+	if !s.Verified {
+		newChannel.Reject(ssh.Prohibited, "you must authenticate in another channel")
+		return
+	}
+
+	var msg channelOpenDirectMsg
+	ssh.Unmarshal(newChannel.ExtraData(), &msg)
+	address := fmt.Sprintf("%s:%d", msg.RAddr, msg.RPort)
+
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		newChannel.Reject(ssh.ConnectionFailed, fmt.Sprintf("error: %v", err))
+		return
+	}
+
+	channel, reqs, err := newChannel.Accept()
+
+	go ssh.DiscardRequests(reqs)
+	var closer sync.Once
+	closeFunc := func() {
+		channel.Close()
+		conn.Close()
+	}
+
+	go func() {
+		io.Copy(channel, conn)
+		closer.Do(closeFunc)
+	}()
+
+	go func() {
+		io.Copy(conn, channel)
+		closer.Do(closeFunc)
+	}()
 }

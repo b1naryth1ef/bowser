@@ -45,6 +45,12 @@ Bowser is a SSH daemon built to be a more secure and auditable version of the st
 - [x] MFA
 - [x] Proper logging / file based logging
 - [x] SQLite for logging sessions
+- [ ] Try out rqlite flow
+- [ ] Convert to a bastion service
+  - [ ] Can only spawn SSH shells
+  - [ ] Ensure multiplex/control master works
+  - [ ] Create/sign CA ssh certs
+- [ ] CLI interface (who, kill session, attach session, etc)
 - [ ] Slack webhook
 - [ ] Discord webhook
 - [ ] Adding accounts (CLI)
