@@ -116,6 +116,26 @@ func (s *SSHSession) handleChannelSession(newChannel ssh.NewChannel) {
 	term.Write([]byte(fmt.Sprintf("Session %v opened\r\n", s.UUID)))
 	term.Write([]byte(s.State.Config.MOTD + "\r\n"))
 
+	// Check what we need to do if TOTP is disabled
+	if s.Account.MFA.TOTP == "" {
+		if s.State.Config.ForceMFA {
+			s.log.Warn(
+				"User does not have MFA enabled, but its forced",
+				zap.Object("uuid", s.UUID),
+				zap.Object("username", s.Account.Username),
+				zap.Object("connection", s.Conn.RemoteAddr()))
+			connection.Close()
+			return
+		} else {
+			s.log.Warn("User logged in with disabled MFA",
+				zap.Object("uuid", s.UUID),
+				zap.Object("username", s.Account.Username),
+				zap.Object("connection", s.Conn.RemoteAddr()))
+			s.Verified = true
+		}
+	}
+
+	// If they are not verified yet, we need to check MFA
 	if !s.Verified {
 		for i := 0; i < 3; i++ {
 			term.Write([]byte("MFA Code: "))
@@ -138,8 +158,6 @@ func (s *SSHSession) handleChannelSession(newChannel ssh.NewChannel) {
 				zap.String("code", line))
 		}
 
-		loginAttemptID := s.State.db.insertLoginAttempt(s)
-
 		// Close connection if its not valid
 		if !s.Verified {
 			s.log.Warn(
@@ -150,8 +168,11 @@ func (s *SSHSession) handleChannelSession(newChannel ssh.NewChannel) {
 			connection.Close()
 			return
 		}
+	}
 
-		s.State.db.insertSession(s.UUID, loginAttemptID)
+	// TODO: better way to sit on connection?
+	if s.Account.Shell == "" {
+		return
 	}
 
 	// Start shell session
@@ -165,7 +186,6 @@ func (s *SSHSession) handleChannelSession(newChannel ssh.NewChannel) {
 			zap.Object("username", s.Account.Username),
 			zap.Object("connection", s.Conn.RemoteAddr()))
 
-		s.State.db.endSession(s.UUID)
 		connection.Close()
 
 		_, err := bash.Process.Wait()
@@ -296,6 +316,29 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	var msg channelOpenDirectMsg
 	ssh.Unmarshal(newChannel.ExtraData(), &msg)
 	address := fmt.Sprintf("%s:%d", msg.RAddr, msg.RPort)
+
+	host := s.State.hosts[address]
+	if host == nil {
+		newChannel.Reject(ssh.ConnectionFailed, "invalid remote host")
+		return
+	}
+
+	// If this host has scopes, we need to validate we have permissions to connect
+	if len(host.Scopes) > 0 {
+		foundScope := false
+		for _, userScope := range s.Account.Scopes {
+			for _, hostScope := range host.Scopes {
+				if userScope == hostScope {
+					foundScope = true
+					break
+				}
+			}
+		}
+
+		if !foundScope {
+			newChannel.Reject(ssh.ConnectionFailed, "invalid permissions")
+		}
+	}
 
 	conn, err := net.Dial("tcp", address)
 	if err != nil {

@@ -14,10 +14,10 @@ import (
 type SSHDState struct {
 	Config *Config
 
-	db       *Database
 	log      zap.Logger
 	accounts map[string]*Account
 	keys     map[string]*AccountKey
+	hosts    map[string]*RemoteHost
 }
 
 func NewSSHDState() *SSHDState {
@@ -27,15 +27,8 @@ func NewSSHDState() *SSHDState {
 		log.Panicf("Failed to load config: %v", err)
 	}
 
-	db, err := NewDatabase(config.DBPath)
-
-	if err != nil {
-		log.Panicf("Failed to load database: %v", err)
-	}
-
 	state := SSHDState{
 		Config: config,
-		db:     db,
 		log:    zap.New(zap.NewJSONEncoder()),
 	}
 
@@ -43,11 +36,33 @@ func NewSSHDState() *SSHDState {
 	os.Mkdir(state.Config.RecordingPath, 0770)
 
 	state.reloadAccounts()
+	state.reloadRemoteHosts()
 	return &state
 }
 
+func (s *SSHDState) reloadRemoteHosts() {
+	rawHosts, err := LoadRemoteHosts(s.Config.RemoteHostsPath)
+	if err != nil {
+		s.log.Error("Failed to load remote hosts", zap.Error(err))
+		return
+	}
+
+	hosts := make(map[string]*RemoteHost)
+
+	for _, host := range rawHosts {
+		if _, exists := hosts[host.ToString()]; exists {
+			s.log.Error("Duplicate remote host", zap.String("host", host.ToString()))
+			return
+		}
+
+		hosts[host.ToString()] = &host
+	}
+
+	s.hosts = hosts
+}
+
 func (s *SSHDState) reloadAccounts() {
-	rawAccounts, err := LoadAccounts(s.Config.Accounts)
+	rawAccounts, err := LoadAccounts(s.Config.AccountsPath)
 	if err != nil {
 		s.log.Error("Failed to load accounts", zap.Error(err))
 		return
@@ -110,9 +125,9 @@ func (s *SSHDState) Run() {
 	}
 
 	// You can generate a keypair with 'ssh-keygen -t rsa'
-	privateBytes, err := ioutil.ReadFile(s.Config.IDRSA)
+	privateBytes, err := ioutil.ReadFile(s.Config.IDRSAPath)
 	if err != nil {
-		log.Fatalf("Failed to load private key (%v)", s.Config.IDRSA)
+		log.Fatalf("Failed to load private key (%v)", s.Config.IDRSAPath)
 	}
 
 	private, err := ssh.ParsePrivateKey(privateBytes)
