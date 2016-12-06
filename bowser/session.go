@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -45,35 +44,27 @@ func (key *AccountKey) ID() string {
 }
 
 type SSHSession struct {
-	UUID          string
-	State         *SSHDState
-	Account       *Account
-	Conn          *ssh.ServerConn
-	RecordingFile *os.File
-	Verified      bool
-	log           zap.Logger
+	UUID     string
+	State    *SSHDState
+	Account  *Account
+	Conn     *ssh.ServerConn
+	Verified bool
+	log      zap.Logger
 }
 
 func NewSSHSession(state *SSHDState, conn *ssh.ServerConn) *SSHSession {
 	id := uuid.NewV4()
 
 	strID, _ := id.MarshalText()
-	path := state.Config.RecordingPath + string(strID) + ".rec"
-	file, err := os.Create(path)
-
-	// This is ok, we null check below
-	if err != nil {
-		state.log.Warn("Couldn't create recording file", zap.Error(err), zap.String("path", path))
-	}
+	// path := state.Config.RecordingPath + string(strID) + ".rec"
 
 	return &SSHSession{
-		UUID:          string(strID),
-		State:         state,
-		Account:       state.accounts[conn.User()],
-		Conn:          conn,
-		RecordingFile: file,
-		Verified:      false,
-		log:           state.log,
+		UUID:     string(strID),
+		State:    state,
+		Account:  state.accounts[conn.User()],
+		Conn:     conn,
+		Verified: false,
+		log:      state.log,
 	}
 }
 
