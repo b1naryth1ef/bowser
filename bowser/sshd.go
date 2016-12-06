@@ -14,10 +14,10 @@ import (
 type SSHDState struct {
 	Config *Config
 
+	ca       *CertificateAuthority
 	log      zap.Logger
 	accounts map[string]*Account
 	keys     map[string]*AccountKey
-	hosts    map[string]*RemoteHost
 }
 
 func NewSSHDState() *SSHDState {
@@ -27,8 +27,15 @@ func NewSSHDState() *SSHDState {
 		log.Panicf("Failed to load config: %v", err)
 	}
 
+	ca, err := NewCertificateAuthority(config.CAKeyPath)
+
+	if err != nil {
+		log.Panicf("Failed to load CA key file: %v", err)
+	}
+
 	state := SSHDState{
 		Config: config,
+		ca:     ca,
 		log:    zap.New(zap.NewJSONEncoder()),
 	}
 
@@ -36,29 +43,7 @@ func NewSSHDState() *SSHDState {
 	os.Mkdir(state.Config.RecordingPath, 0770)
 
 	state.reloadAccounts()
-	state.reloadRemoteHosts()
 	return &state
-}
-
-func (s *SSHDState) reloadRemoteHosts() {
-	rawHosts, err := LoadRemoteHosts(s.Config.RemoteHostsPath)
-	if err != nil {
-		s.log.Error("Failed to load remote hosts", zap.Error(err))
-		return
-	}
-
-	hosts := make(map[string]*RemoteHost)
-
-	for _, host := range rawHosts {
-		if _, exists := hosts[host.ToString()]; exists {
-			s.log.Error("Duplicate remote host", zap.String("host", host.ToString()))
-			return
-		}
-
-		hosts[host.ToString()] = &host
-	}
-
-	s.hosts = hosts
 }
 
 func (s *SSHDState) reloadAccounts() {
@@ -157,8 +142,6 @@ func (s *SSHDState) Run() {
 		if err != nil {
 			s.log.Warn(
 				"Failed to handshake",
-				zap.String("user", sshConn.User()),
-				zap.String("remote", sshConn.RemoteAddr().String()),
 				zap.Error(err))
 			continue
 		}

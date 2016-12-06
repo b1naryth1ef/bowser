@@ -17,6 +17,7 @@ import (
 	"github.com/satori/go.uuid"
 	"github.com/uber-go/zap"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -86,6 +87,7 @@ func (s *SSHSession) handleChannels(chans <-chan ssh.NewChannel) {
 }
 
 func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
+	log.Printf("session opened w/ %v", newChannel.ChannelType())
 	switch newChannel.ChannelType() {
 	case "session":
 		s.handleChannelSession(newChannel)
@@ -268,7 +270,7 @@ func (s *SSHSession) handleChannelSession(newChannel ssh.NewChannel) {
 				w, h := parseDims(req.Payload)
 				SetWinsize(bashf.Fd(), w, h)
 			default:
-				log.Printf("wtf: %s", req.Type)
+				log.Printf("wtf: %s / %v", req.Type, req.Payload)
 			}
 		}
 	}()
@@ -313,32 +315,41 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 		return
 	}
 
-	var msg channelOpenDirectMsg
-	ssh.Unmarshal(newChannel.ExtraData(), &msg)
-	address := fmt.Sprintf("%s:%d", msg.RAddr, msg.RPort)
-
-	host := s.State.hosts[address]
-	if host == nil {
-		newChannel.Reject(ssh.ConnectionFailed, "invalid remote host")
+	// Attempt to open a channel to the auth agent
+	agentChan, agentReqs, err := s.Conn.OpenChannel("auth-agent@openssh.com", nil)
+	if err != nil {
+		newChannel.Reject(ssh.Prohibited, "you must have an ssh agent open and forwarded")
 		return
 	}
 
-	// If this host has scopes, we need to validate we have permissions to connect
-	if len(host.Scopes) > 0 {
-		foundScope := false
-		for _, userScope := range s.Account.Scopes {
-			for _, hostScope := range host.Scopes {
-				if userScope == hostScope {
-					foundScope = true
-					break
-				}
-			}
-		}
+	go ssh.DiscardRequests(agentReqs)
 
-		if !foundScope {
-			newChannel.Reject(ssh.ConnectionFailed, "invalid permissions")
-		}
+	// Open an agent on the channel
+	ag := agent.NewClient(agentChan)
+
+	cert, privateKey, err := s.State.ca.Generate("andrei")
+	if err != nil {
+		log.Printf("Failed to generate SSH cert/key: %v", err)
+		return
 	}
+
+	err = ag.Add(agent.AddedKey{
+		PrivateKey:   privateKey,
+		Certificate:  cert,
+		LifetimeSecs: 60,
+		Comment:      "temporary ssh certificate",
+	})
+
+	if err != nil {
+		log.Printf("Failed toadd key: %v", err)
+	}
+
+	keys, _ := ag.List()
+	log.Printf("keys: %v", keys)
+
+	var msg channelOpenDirectMsg
+	ssh.Unmarshal(newChannel.ExtraData(), &msg)
+	address := fmt.Sprintf("%s:%d", msg.RAddr, msg.RPort)
 
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
@@ -351,6 +362,7 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	go ssh.DiscardRequests(reqs)
 	var closer sync.Once
 	closeFunc := func() {
+		agentChan.Close()
 		channel.Close()
 		conn.Close()
 	}

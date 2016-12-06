@@ -1,57 +1,18 @@
 # Bowser
-
-Bowser is a SSH daemon built to be a more secure and auditable version of the standard OpenSSH. Bowser supports MFA/TOTP out of the box, includes extensive logging, and supports recording/replaying of PTY sessions.
+Bowser is a SSH daemon/CA built to be a more secure and auditable SSH option.
 
 ### Features
 
-- SSH/PTY Support
+- SSH User Certificates using builtin CA
 - Multi-Factor authentication using TOTP
 - Extensive session logging for auditing
 - Ability to record and replay all PTY sessions
-- Logging of sessions to SQLite
 
-## Example Bowser Configuration
-
-```json
-{
-  "bind": "0.0.0.0:22",
-  "motd": "Google Inc. SSH",
-  "accounts": "/etc/bowser/accounts.json",
-  "id_rsa": "/etc/bowser/id_rsa",
-}
-```
-
-## Example Account Configuration
-```json
-{
-  "username": "andrei",
-  "ssh-keys": [
-    "ssh-rsa ....",
-    "ssh-rsa ...."
-  ],
-  "mfa": {
-    "totp": "ADFSFSDFSDF"
-  },
-  "scopes": [
-    "production"
-  ],
-  "shell": "zsh"
-}
-```
 
 # TODO
-- [x] Basic SSH daemon
-- [x] Basic Console logging
-- [x] MFA
-- [x] Proper logging / file based logging
-- [x] SQLite for logging sessions
-- [ ] Try out rqlite flow
-- [ ] Convert to a bastion service
-  - [ ] Can only spawn SSH shells
-  - [ ] Ensure multiplex/control master works
-  - [ ] Create/sign CA ssh certs
-- [ ] CLI interface (who, kill session, attach session, etc)
-- [ ] Slack webhook
-- [ ] Discord webhook
-- [ ] Adding accounts (CLI)
-- [ ] Proper recording/replay
+- [ ] Slack/Discord webhooks
+- [ ] Make sure logging covers all flows
+- [ ] Add support for proper time-encoded recording of PTYs
+- [ ] Add support for GPG encrypting PTY recordings
+- [ ] Add support for backing up recordings to GCS/S3
+- [ ] Simple telnet server for auditing sessions
