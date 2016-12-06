@@ -14,10 +14,11 @@ import (
 type SSHDState struct {
 	Config *Config
 
-	ca       *CertificateAuthority
-	log      zap.Logger
-	accounts map[string]*Account
-	keys     map[string]*AccountKey
+	WebhookProviders []WebhookProvider
+	ca               *CertificateAuthority
+	log              zap.Logger
+	accounts         map[string]*Account
+	keys             map[string]*AccountKey
 }
 
 func NewSSHDState() *SSHDState {
@@ -33,10 +34,17 @@ func NewSSHDState() *SSHDState {
 		log.Panicf("Failed to load CA key file: %v", err)
 	}
 
+	providers := make([]WebhookProvider, 0)
+
+	for _, url := range config.DiscordWebhooks {
+		providers = append(providers, DiscordWebhookProvider{URL: url})
+	}
+
 	state := SSHDState{
-		Config: config,
-		ca:     ca,
-		log:    zap.New(zap.NewJSONEncoder()),
+		Config:           config,
+		WebhookProviders: providers,
+		ca:               ca,
+		log:              zap.New(zap.NewJSONEncoder()),
 	}
 
 	// Ensure the logpath exists

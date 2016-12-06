@@ -19,12 +19,13 @@ type Account struct {
 }
 
 type Config struct {
-	Bind          string `json:"bind"`
-	AccountsPath  string `json:"accounts_path"`
-	IDRSAPath     string `json:"id_rsa_path"`
-	CAKeyPath     string `json:"ca_key_path"`
-	RecordingPath string `json:"recording_path"`
-	ForceMFA      bool   `json:"force_mfa"`
+	Bind            string   `json:"bind"`
+	AccountsPath    string   `json:"accounts_path"`
+	IDRSAPath       string   `json:"id_rsa_path"`
+	CAKeyPath       string   `json:"ca_key_path"`
+	RecordingPath   string   `json:"recording_path"`
+	ForceMFA        bool     `json:"force_mfa"`
+	DiscordWebhooks []string `json:"discord_webhooks"`
 }
 
 func LoadConfig(path string) (*Config, error) {

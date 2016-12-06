@@ -7,12 +7,10 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"sync"
 	"syscall"
 	"unsafe"
 
-	"github.com/kr/pty"
 	"github.com/pquerna/otp/totp"
 	"github.com/satori/go.uuid"
 	"github.com/uber-go/zap"
@@ -106,6 +104,7 @@ func (s *SSHSession) handleChannelSession(newChannel ssh.NewChannel) {
 		s.log.Warn("Could not accept channel", zap.Error(err))
 		return
 	}
+	go ssh.DiscardRequests(requests)
 
 	s.log.Info(
 		"Connection Opened",
@@ -116,7 +115,6 @@ func (s *SSHSession) handleChannelSession(newChannel ssh.NewChannel) {
 
 	term := terminal.NewTerminal(connection, "")
 	term.Write([]byte(fmt.Sprintf("Session %v opened\r\n", s.UUID)))
-	term.Write([]byte(s.State.Config.MOTD + "\r\n"))
 
 	// Check what we need to do if TOTP is disabled
 	if s.Account.MFA.TOTP == "" {
@@ -176,104 +174,6 @@ func (s *SSHSession) handleChannelSession(newChannel ssh.NewChannel) {
 	if s.Account.Shell == "" {
 		return
 	}
-
-	// Start shell session
-	bash := exec.Command(s.Account.Shell)
-
-	// Prepare teardown function
-	close := func() {
-		s.log.Info(
-			"Connection closed normally",
-			zap.Object("uuid", s.UUID),
-			zap.Object("username", s.Account.Username),
-			zap.Object("connection", s.Conn.RemoteAddr()))
-
-		connection.Close()
-
-		_, err := bash.Process.Wait()
-		if err != nil {
-			s.log.Warn(
-				"Failed to exit shell",
-				zap.Object("uuid", s.UUID),
-				zap.Object("username", s.Account.Username),
-				zap.Object("connection", s.Conn.RemoteAddr()),
-				zap.String("shell", s.Account.Shell),
-				zap.Error(err))
-		}
-	}
-
-	// Allocate a terminal for this channel
-	s.log.Info(
-		"Shell Created",
-		zap.Object("uuid", s.UUID),
-		zap.Object("username", s.Account.Username),
-		zap.Object("connection", s.Conn.RemoteAddr()),
-		zap.String("shell", s.Account.Shell))
-
-	bashf, err := pty.Start(bash)
-	if err != nil {
-		s.log.Warn("could not start pty", zap.String("uuid", s.UUID), zap.Error(err))
-		close()
-		return
-	}
-
-	// Handle sending PTY data to the session while also logging to file
-	var once sync.Once
-	go func() {
-		var err error
-		var size int
-		buffer := make([]byte, 1024)
-
-		for err != io.EOF {
-			size, err = connection.Read(buffer)
-			bashf.Write(buffer[:size])
-		}
-
-		once.Do(close)
-	}()
-
-	go func() {
-		var err error
-		var size int
-		buffer := make([]byte, 1024)
-
-		for err != io.EOF {
-			size, err = bashf.Read(buffer)
-			connection.Write(buffer[:size])
-
-			if s.RecordingFile != nil {
-				s.RecordingFile.Write(buffer[:size])
-			}
-		}
-
-		once.Do(close)
-	}()
-
-	// Sessions have out-of-band requests such as "shell", "pty-req" and "env"
-	go func() {
-		for req := range requests {
-			switch req.Type {
-			case "shell":
-				// We only accept the default shell
-				// (i.e. no command in the Payload)
-				if len(req.Payload) == 0 {
-					req.Reply(true, nil)
-				}
-			case "pty-req":
-				termLen := req.Payload[3]
-				w, h := parseDims(req.Payload[termLen+4:])
-				SetWinsize(bashf.Fd(), w, h)
-				// Responding true (OK) here will let the client
-				// know we have a pty ready for input
-				req.Reply(true, nil)
-			case "window-change":
-				w, h := parseDims(req.Payload)
-				SetWinsize(bashf.Fd(), w, h)
-			default:
-				log.Printf("wtf: %s / %v", req.Type, req.Payload)
-			}
-		}
-	}()
 }
 
 // =======================
@@ -350,6 +250,12 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	var msg channelOpenDirectMsg
 	ssh.Unmarshal(newChannel.ExtraData(), &msg)
 	address := fmt.Sprintf("%s:%d", msg.RAddr, msg.RPort)
+
+	// TODO: address validation
+
+	for _, wp := range s.State.WebhookProviders {
+		log.Printf("err: %v", wp.NotifyNewSession(s.Conn.User(), address))
+	}
 
 	conn, err := net.Dial("tcp", address)
 	if err != nil {

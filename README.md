@@ -10,9 +10,10 @@ Bowser is a SSH daemon/CA built to be a more secure and auditable SSH option.
 
 
 # TODO
-- [ ] Slack/Discord webhooks
+- [x] Slack/Discord webhooks
 - [ ] Make sure logging covers all flows
 - [ ] Add support for proper time-encoded recording of PTYs
 - [ ] Add support for GPG encrypting PTY recordings
 - [ ] Add support for backing up recordings to GCS/S3
 - [ ] Simple telnet server for auditing sessions
+- [ ] CLI for replaying sessions
