@@ -29,7 +29,7 @@ type DiscordWebhookProvider struct {
 func (d DiscordWebhookProvider) NotifyNewSession(username, host string) error {
 	data, err := json.Marshal(MessagePayload{Embeds: []Embed{Embed{
 		Title:       "New SSH Session",
-		Description: fmt.Sprintf("%s started a new session on %s", username, host),
+		Description: fmt.Sprintf("**%s** started a new session on **%s**", username, host),
 		Color:       7855479,
 	}}})
 

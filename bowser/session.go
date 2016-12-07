@@ -1,9 +1,9 @@
 package bowser
 
 import (
+	"crypto/rand"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"sync"
 
@@ -45,13 +45,23 @@ type SSHSession struct {
 	State   *SSHDState
 	Account *Account
 	Conn    *ssh.ServerConn
-	log     zap.Logger
+
+	verified bool
+	log      zap.Logger
 }
 
 func NewSSHSession(state *SSHDState, conn *ssh.ServerConn) *SSHSession {
 	id := uuid.NewV4()
 
 	strID, _ := id.MarshalText()
+
+	state.log.Info(
+		"New SSH session created",
+		zap.String("id", string(strID)),
+		zap.String("username", conn.User()),
+		zap.String("session-id", string(conn.SessionID())),
+		zap.String("client-version", string(conn.ClientVersion())),
+		zap.Object("remote-addr", conn.RemoteAddr().String()))
 
 	return &SSHSession{
 		UUID:    string(strID),
@@ -74,6 +84,10 @@ func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
 	case "direct-tcpip":
 		s.handleChannelForward(newChannel)
 	default:
+		s.log.Error(
+			"Rejecting channel with invalid channel type",
+			zap.String("type", newChannel.ChannelType()),
+			zap.String("id", s.UUID))
 		newChannel.Reject(ssh.UnknownChannelType, fmt.Sprintf("unknown channel type"))
 		return
 	}
@@ -90,6 +104,10 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	// Attempt to open a channel to the auth agent
 	agentChan, agentReqs, err := s.Conn.OpenChannel("auth-agent@openssh.com", nil)
 	if err != nil {
+		s.log.Error(
+			"Rejecting forward: failed to open ssh agent",
+			zap.String("id", s.UUID),
+			zap.Error(err))
 		newChannel.Reject(ssh.Prohibited, "you must have an ssh agent open and forwarded")
 		return
 	}
@@ -100,12 +118,87 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	// Open an agent on the channel
 	ag := agent.NewClient(agentChan)
 
-	cert, privateKey, err := s.State.ca.Generate("test", "andrei")
+	// If the session has not been verified yet, we must do that now by taking a
+	//  random string, requesting their agent encrypt it with a known public key,
+	//  and validating the results. This verifies ownership of the public key, even
+	//  though it is not used as the primary authentication scheme for the session.
+	if !s.verified {
+		signers, err := ag.Signers()
+		if err != nil {
+			s.log.Error(
+				"Rejecting forward: failed to get list of signers from agent",
+				zap.String("id", s.UUID),
+				zap.Error(err))
+			newChannel.Reject(ssh.Prohibited, "agent will not give us a list of signers")
+			return
+		}
+
+		// Iterate over all signers to find one with a valid publick ey
+		for _, signer := range signers {
+			// Check if the public key exists
+			accountKey, exists := s.State.keys[string(signer.PublicKey().Marshal())]
+			if !exists {
+				continue
+			}
+
+			// Verify whether the public key is for the current sessions account
+			if accountKey.Account != s.Account {
+				continue
+			}
+
+			// If it is, validate a random string
+			randomToken := make([]byte, 128)
+			_, err := rand.Read(randomToken)
+			if err != nil {
+				s.log.Error(
+					"Rejecting forward: failed to generate random token",
+					zap.String("id", s.UUID),
+					zap.Error(err))
+				newChannel.Reject(ssh.Prohibited, "cannot generate random token")
+				return
+			}
+
+			// Sign the random token with the signer
+			sig, err := signer.Sign(rand.Reader, randomToken)
+			if err != nil {
+				s.log.Error(
+					"Rejecting forward: failed to sign random token",
+					zap.String("id", s.UUID),
+					zap.Error(err))
+				newChannel.Reject(ssh.Prohibited, "cannot sign random token")
+				return
+			}
+
+			// Verify the signature
+			err = accountKey.Key.Verify(randomToken, sig)
+			if err != nil {
+				s.log.Error(
+					"Rejecting forward: failed to verify random token signature",
+					zap.String("id", s.UUID),
+					zap.Error(err))
+				newChannel.Reject(ssh.Prohibited, "signature verification failed")
+				return
+			}
+
+			s.log.Info("Public key verification completed", zap.String("id", s.UUID))
+			s.verified = true
+			break
+		}
+	}
+
+	// Now that we're verified, we must ask the SSH-CA to generate and sign a valid
+	//  SSH key/cert that we can use to login.
+	cert, privateKey, err := s.State.ca.Generate(s.UUID, s.Account.Username)
 	if err != nil {
-		log.Printf("Failed to generate SSH cert/key: %v", err)
+		s.log.Error(
+			"Rejecting forward: failed to generate ssh certificate",
+			zap.String("id", s.UUID),
+			zap.Error(err))
+		newChannel.Reject(ssh.Prohibited, "failed to generate ssh certificate")
 		return
 	}
 
+	// Now we add the generated key and certificate to the users agent
 	err = ag.Add(agent.AddedKey{
 		PrivateKey:   privateKey,
 		Certificate:  cert,
@@ -114,14 +207,19 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	})
 
 	if err != nil {
-		log.Printf("Failed to add key: %v", err)
+		s.log.Error(
+			"Rejecting forward: failed to add ssh key/cert to agent",
+			zap.String("id", s.UUID),
+			zap.Error(err))
+		newChannel.Reject(ssh.Prohibited, "failed to add ssh key/cert to agent")
+		return
 	}
 
+	// Finally, we're ready to find out where the client wants to go, and redirect
+	//  them properly.
 	var msg channelOpenDirectMsg
 	ssh.Unmarshal(newChannel.ExtraData(), &msg)
 	address := fmt.Sprintf("%s:%d", msg.RAddr, msg.RPort)
-
-	// TODO: address validation
 
 	for _, wp := range s.State.WebhookProviders {
 		wp.NotifyNewSession(s.Conn.User(), address)
@@ -129,6 +227,11 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
+		s.log.Error(
+			"Rejecting forward: failed to open TCP connection to remote host",
+			zap.String("id", s.UUID),
+			zap.String("host", address),
+			zap.Error(err))
 		newChannel.Reject(ssh.ConnectionFailed, fmt.Sprintf("error: %v", err))
 		return
 	}
