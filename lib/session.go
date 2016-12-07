@@ -15,6 +15,7 @@ import (
 	_ "golang.org/x/crypto/ssh/terminal"
 )
 
+// An account key represents a mapping of ssh public key to account
 type AccountKey struct {
 	Account *Account
 	Key     ssh.PublicKey
@@ -40,6 +41,7 @@ func (key *AccountKey) ID() string {
 	return string(key.Key.Marshal())
 }
 
+// An SSHSession represents one TCP connection, with one or more direct-tcpip channels
 type SSHSession struct {
 	UUID    string
 	State   *SSHDState
@@ -188,7 +190,7 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 
 	// Now that we're verified, we must ask the SSH-CA to generate and sign a valid
 	//  SSH key/cert that we can use to login.
-	cert, privateKey, err := s.State.ca.Generate(s.UUID, s.Account.Username)
+	cert, privateKey, err := s.State.ca.Generate(s.UUID, s.Account.Username, s.State.Config.ForceCommand)
 	if err != nil {
 		s.log.Error(
 			"Rejecting forward: failed to generate ssh certificate",

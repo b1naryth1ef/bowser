@@ -18,12 +18,14 @@ type Account struct {
 	Scopes     []string   `json:"scopes"`
 }
 
+// The base config which stores mostly paths and some general configuration info
 type Config struct {
 	Bind            string   `json:"bind"`
 	AccountsPath    string   `json:"accounts_path"`
 	IDRSAPath       string   `json:"id_rsa_path"`
 	CAKeyPath       string   `json:"ca_key_path"`
 	DiscordWebhooks []string `json:"discord_webhooks"`
+	ForceCommand    string   `json:"force_command"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -43,8 +45,8 @@ func LoadConfig(path string) (*Config, error) {
 	return &result, err
 }
 
-func LoadAccounts(path string) (acts []Account, err error) {
-	file, err := ioutil.ReadFile(path)
+func (c *Config) loadAccounts() (acts []Account, err error) {
+	file, err := ioutil.ReadFile(c.AccountsPath)
 	if err != nil {
 		return
 	}

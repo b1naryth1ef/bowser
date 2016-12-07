@@ -29,21 +29,21 @@ type SSHDState struct {
 	sessionValidityCache map[string]*Account
 }
 
-func NewSSHDState() *SSHDState {
-	config, err := LoadConfig("config.json")
-
+func NewSSHDState(configPath string) *SSHDState {
+	// Load our configuration
+	config, err := LoadConfig(configPath)
 	if err != nil {
 		log.Panicf("Failed to load config: %v", err)
 	}
 
+	// Load our SSH CA
 	ca, err := NewCertificateAuthority(config.CAKeyPath)
-
 	if err != nil {
 		log.Panicf("Failed to load CA key file: %v", err)
 	}
 
+	// Load all the webhook providers
 	providers := make([]WebhookProvider, 0)
-
 	for _, url := range config.DiscordWebhooks {
 		providers = append(providers, DiscordWebhookProvider{URL: url})
 	}
@@ -61,7 +61,7 @@ func NewSSHDState() *SSHDState {
 }
 
 func (s *SSHDState) reloadAccounts() {
-	rawAccounts, err := LoadAccounts(s.Config.AccountsPath)
+	rawAccounts, err := s.Config.loadAccounts()
 	if err != nil {
 		s.log.Error("Failed to load accounts", zap.Error(err))
 		return
@@ -103,7 +103,7 @@ func (s *SSHDState) reloadAccounts() {
 	s.keys = keys
 }
 
-var badKeyError = fmt.Errorf("This is not the castle you are looking for...")
+var badKeyError = fmt.Errorf("Invalid SSH key")
 var badPasswordError = fmt.Errorf("Invalid password")
 var badMFAError = fmt.Errorf("Invalid MFA code")
 
@@ -130,7 +130,12 @@ func (s *SSHDState) Run() {
 			// Mark that this sessions SSH key was validated in the cache
 			s.sessionValidityCache[string(conn.SessionID())] = accountKey.Account
 
-			// We return
+			// Finally, even though we've validated a public key for this session, we
+			//  return an error as if we had not. This forces the client to authenticate
+			//  in the keyboard interactive mode, allowing us to capture their password
+			//  and mfa token. Later on, we can validate that the user actually owns
+			//  the public key above by requesting they sign random data with the key
+			//  using their SSH agent.
 			return nil, badKeyError
 		},
 
@@ -147,6 +152,7 @@ func (s *SSHDState) Run() {
 				return nil, badPasswordError
 			}
 
+			// Check if the password matches
 			err = bcrypt.CompareHashAndPassword([]byte(account.Password), []byte(passwordAnswer[0]))
 			if err != nil {
 				return nil, badPasswordError
