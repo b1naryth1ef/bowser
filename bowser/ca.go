@@ -31,7 +31,7 @@ func NewCertificateAuthority(keyPath string) (ca *CertificateAuthority, err erro
 	return
 }
 
-func (ca *CertificateAuthority) Generate(username string) (*ssh.Certificate, *ed25519.PrivateKey, error) {
+func (ca *CertificateAuthority) Generate(sessionID, username string) (*ssh.Certificate, *ed25519.PrivateKey, error) {
 	edPublicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, nil, err
@@ -45,9 +45,9 @@ func (ca *CertificateAuthority) Generate(username string) (*ssh.Certificate, *ed
 	cert := ssh.Certificate{
 		Key:             publicKey,
 		CertType:        ssh.UserCert,
-		KeyId:           fmt.Sprintf("user_%s_%v", username, 1),
+		KeyId:           fmt.Sprintf("%s_%s", username, sessionID),
 		ValidPrincipals: []string{username},
-		ValidAfter:      uint64(time.Now().UTC().Add(-1 * time.Minute).Unix()),
+		ValidAfter:      uint64(time.Now().UTC().Add(-15 * time.Second).Unix()),
 		ValidBefore:     uint64(time.Now().UTC().Add(1 * time.Minute).Unix()),
 	}
 

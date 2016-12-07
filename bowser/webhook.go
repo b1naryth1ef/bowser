@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"log"
 	"net/http"
 )
 
@@ -39,8 +37,6 @@ func (d DiscordWebhookProvider) NotifyNewSession(username, host string) error {
 		return err
 	}
 
-	log.Printf("data: %s", data)
-
 	req, err := http.NewRequest("POST", d.URL, bytes.NewBuffer(data))
 
 	if err != nil {
@@ -52,9 +48,5 @@ func (d DiscordWebhookProvider) NotifyNewSession(username, host string) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
-
-	body, _ := ioutil.ReadAll(resp.Body)
-	log.Printf("out: %s", body)
-
 	return err
 }

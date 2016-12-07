@@ -5,9 +5,10 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-	"os"
 
+	"github.com/pquerna/otp/totp"
 	"github.com/uber-go/zap"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -19,6 +20,9 @@ type SSHDState struct {
 	log              zap.Logger
 	accounts         map[string]*Account
 	keys             map[string]*AccountKey
+
+	// Caches a session ID, to the validity state
+	sessionValidityCache map[string]*Account
 }
 
 func NewSSHDState() *SSHDState {
@@ -41,14 +45,12 @@ func NewSSHDState() *SSHDState {
 	}
 
 	state := SSHDState{
-		Config:           config,
-		WebhookProviders: providers,
-		ca:               ca,
-		log:              zap.New(zap.NewJSONEncoder()),
+		Config:               config,
+		WebhookProviders:     providers,
+		ca:                   ca,
+		log:                  zap.New(zap.NewJSONEncoder()),
+		sessionValidityCache: make(map[string]*Account),
 	}
-
-	// Ensure the logpath exists
-	os.Mkdir(state.Config.RecordingPath, 0770)
 
 	state.reloadAccounts()
 	return &state
@@ -98,45 +100,100 @@ func (s *SSHDState) reloadAccounts() {
 }
 
 var badKeyError = fmt.Errorf("This is not the castle you are looking for...")
+var badPasswordError = fmt.Errorf("Invalid password")
+var badMFAError = fmt.Errorf("Invalid MFA code")
 
 func (s *SSHDState) Run() {
 	sshConfig := &ssh.ServerConfig{
+		NoClientAuth: false,
+
+		ServerVersion: "SSH-2.0-bowser-v0.0.1",
+
+		// Function to handle public key verification
 		PublicKeyCallback: func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 			accountKey, exists := s.keys[string(key.Marshal())]
 
-			// If we don't have that key, just gtfo
+			// If the key doesn't exist, just break
 			if !exists {
 				return nil, badKeyError
 			}
 
+			// If the username doesn't match, break
 			if conn.User() != accountKey.Account.Username {
 				return nil, badKeyError
+			}
+
+			// Mark that this sessions SSH key was validated in the cache
+			s.sessionValidityCache[string(conn.SessionID())] = accountKey.Account
+
+			// We return
+			return nil, badKeyError
+		},
+
+		KeyboardInteractiveCallback: func(conn ssh.ConnMetadata, client ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
+			// Make sure their SSH key was previously validated
+			account, exists := s.sessionValidityCache[string(conn.SessionID())]
+			if !exists {
+				return nil, badKeyError
+			}
+
+			// Request and validate the clients password
+			passwordAnswer, err := client(conn.User(), "", []string{"Password: "}, []bool{false})
+			if err != nil {
+				return nil, badPasswordError
+			}
+
+			err = bcrypt.CompareHashAndPassword([]byte(account.Password), []byte(passwordAnswer[0]))
+			if err != nil {
+				return nil, badPasswordError
+			}
+
+			// Request and validate the clients MFA code
+			var verified bool
+
+			for i := 0; i < 3; i++ {
+				mfaAnswer, err := client(conn.User(), "", []string{"MFA Token: "}, []bool{true})
+
+				if err != nil {
+					continue
+				}
+
+				if totp.Validate(mfaAnswer[0], account.MFA.TOTP) {
+					verified = true
+					break
+				}
+			}
+
+			if !verified {
+				return nil, badMFAError
 			}
 
 			return nil, nil
 		},
 	}
 
-	// You can generate a keypair with 'ssh-keygen -t rsa'
+	// Load our ID-RSA private key into memory
 	privateBytes, err := ioutil.ReadFile(s.Config.IDRSAPath)
 	if err != nil {
 		log.Fatalf("Failed to load private key (%v)", s.Config.IDRSAPath)
 	}
 
+	// Parse the private key
 	private, err := ssh.ParsePrivateKey(privateBytes)
 	if err != nil {
 		log.Fatal("Failed to parse private key")
 	}
 
+	// Add it to our SSHD configuration
 	sshConfig.AddHostKey(private)
 
-	// Once a ServerConfig has been configured, connections can be accepted.
+	// Open a TCP listener on the bind address requested
 	listener, err := net.Listen("tcp", s.Config.Bind)
 	if err != nil {
-		log.Fatalf("Failed to listen on 2200 (%s)", err)
+		log.Fatalf("Failed to listen on %s: %s", s.Config.Bind, err)
 	}
 
-	// Accept all connections
+	// Begin listening and accepting connections
 	log.Printf("Listening on %v", s.Config.Bind)
 	for {
 		tcpConn, err := listener.Accept()
@@ -145,15 +202,14 @@ func (s *SSHDState) Run() {
 			continue
 		}
 
-		// Before use, a handshake must be performed on the incoming net.Conn.
+		// After opening the connection, attempt a handshake
 		sshConn, chans, reqs, err := ssh.NewServerConn(tcpConn, sshConfig)
 		if err != nil {
-			s.log.Warn(
-				"Failed to handshake",
-				zap.Error(err))
+			s.log.Warn("Failed to handshake", zap.Error(err))
 			continue
 		}
 
+		// Open the SSH session struct on the connection
 		session := NewSSHSession(s, sshConn)
 
 		s.log.Info(

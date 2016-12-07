@@ -1,6 +1,8 @@
 package main
 
-import "./bowser"
+import (
+	"./bowser"
+)
 
 func main() {
 	sshd := bowser.NewSSHDState()
