@@ -1,7 +1,7 @@
 package main
 
 import (
-	"./bowser"
+	"github.com/b1naryth1ef/bowser/lib"
 )
 
 func main() {

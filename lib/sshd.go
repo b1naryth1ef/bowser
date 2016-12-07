@@ -12,6 +12,10 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+const (
+	VERSION = "v0.0.1"
+)
+
 type SSHDState struct {
 	Config *Config
 
@@ -107,7 +111,7 @@ func (s *SSHDState) Run() {
 	sshConfig := &ssh.ServerConfig{
 		NoClientAuth: false,
 
-		ServerVersion: "SSH-2.0-bowser-v0.0.1",
+		ServerVersion: fmt.Sprintf("SSH-2.0-bowser-%s", VERSION),
 
 		// Function to handle public key verification
 		PublicKeyCallback: func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
