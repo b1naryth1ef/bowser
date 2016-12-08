@@ -1,6 +1,6 @@
 # Bowser
 
-Bowser is a modern and more secure SSH daemon and SSH CA intended for use as a bastion. By utilizing three factors of authentication, automatic generation and signing of single use SSH keys / certificates, and extensive logging, Bowser offers an extremely secure platform for performing SSH. Bowser was built at [Discord](https://discordapp.com/) to help us feel confident in the security of the most exposed and vulnerable piece of any infrastructure.
+Bowser is a modern, simple, and grokable SSH daemon built to act as a bastion and SSH certificate authority. Bastion provides users with a unobtrusive yet highly secure flow to SSH. Bowser was built at [Discord](https://discordapp.com/).
 
 ### Features
 - Three-Factor authentication using SSH keys, passwords, and TOTP
