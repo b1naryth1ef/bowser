@@ -46,12 +46,24 @@ func LoadConfig(path string) (*Config, error) {
 	return &result, err
 }
 
-func (c *Config) loadAccounts() (acts []Account, err error) {
+func (c *Config) LoadAccounts() (acts []Account, err error) {
 	file, err := ioutil.ReadFile(c.AccountsPath)
 	if err != nil {
 		return
 	}
 
 	err = json.Unmarshal(file, &acts)
+	return
+}
+
+func (c *Config) SaveAccounts(acts []Account) (err error) {
+	data, err := json.MarshalIndent(acts, "", "  ")
+	if err != nil {
+		return
+	}
+
+	// TODO: consider adding sanity checks here
+
+	err = ioutil.WriteFile(c.AccountsPath, data, 644)
 	return
 }

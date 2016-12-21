@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base32"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 
@@ -13,6 +14,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh/terminal"
 )
+
+var configPath = flag.String("config", "config.json", "path to config file")
 
 func main() {
 	reader := bufio.NewReader(os.Stdin)
@@ -63,7 +66,7 @@ func main() {
 		username[:len(username)-1],
 		totpEncoded,
 	), qrterminal.H, os.Stdout)
-	fmt.Printf("Please scan the above QR code with your TOTP app")
+	fmt.Printf("Please scan the above QR code with your TOTP app (or enter manually: `%s`)", totpEncoded)
 	reader.ReadString('\n')
 
 	// Create and serialize account to stdout
@@ -74,6 +77,26 @@ func main() {
 		MFA:        bowser.AccountMFA{TOTP: string(totpEncoded)},
 	}
 
-	data, _ := json.Marshal(account)
-	fmt.Printf("\r\n%s\n", data)
+	if *configPath != "" {
+		config, err := bowser.LoadConfig(*configPath)
+		if err != nil {
+			fmt.Printf("Failed to load config: %v\n", err)
+			return
+		}
+
+		accounts, err := config.LoadAccounts()
+		if err != nil {
+			fmt.Printf("Failed to load accounts: %v\n", err)
+			return
+		}
+
+		err = config.SaveAccounts(append(accounts, account))
+		if err != nil {
+			fmt.Printf("Failed to save accounts: %v\n", err)
+			return
+		}
+	} else {
+		data, _ := json.Marshal(account)
+		fmt.Printf("\r\n%s\n", data)
+	}
 }

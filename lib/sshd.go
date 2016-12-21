@@ -61,7 +61,7 @@ func NewSSHDState(configPath string) *SSHDState {
 }
 
 func (s *SSHDState) reloadAccounts() {
-	rawAccounts, err := s.Config.loadAccounts()
+	rawAccounts, err := s.Config.LoadAccounts()
 	if err != nil {
 		s.log.Error("Failed to load accounts", zap.Error(err))
 		return
