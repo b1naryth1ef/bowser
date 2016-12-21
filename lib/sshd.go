@@ -70,7 +70,9 @@ func (s *SSHDState) reloadAccounts() {
 	accounts := make(map[string]*Account)
 	keys := make(map[string]*AccountKey)
 
-	for _, account := range rawAccounts {
+	for aid := range rawAccounts {
+		account := rawAccounts[aid]
+
 		if _, exists := accounts[account.Username]; exists {
 			s.log.Error("Duplicate username", zap.String("username", account.Username))
 			return
