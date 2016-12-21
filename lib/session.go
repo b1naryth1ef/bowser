@@ -190,7 +190,14 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 
 	// Now that we're verified, we must ask the SSH-CA to generate and sign a valid
 	//  SSH key/cert that we can use to login.
-	cert, privateKey, err := s.State.ca.Generate(s.UUID, s.Account.Username, s.State.Config.ForceCommand)
+	var username string
+	if s.State.Config.ForceUser != "" {
+		username = s.State.Config.ForceUser
+	} else {
+		username = s.Account.Username
+	}
+
+	cert, privateKey, err := s.State.ca.Generate(s.UUID, username, s.State.Config.ForceCommand)
 	if err != nil {
 		s.log.Error(
 			"Rejecting forward: failed to generate ssh certificate",

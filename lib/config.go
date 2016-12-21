@@ -26,6 +26,7 @@ type Config struct {
 	CAKeyPath       string   `json:"ca_key_path"`
 	DiscordWebhooks []string `json:"discord_webhooks"`
 	ForceCommand    string   `json:"force_command"`
+	ForceUser       string   `json:"force_user"`
 }
 
 func LoadConfig(path string) (*Config, error) {
