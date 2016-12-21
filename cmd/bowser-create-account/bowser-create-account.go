@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"crypto/rand"
-	"encoding/base64"
+	"encoding/base32"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -55,7 +55,7 @@ func main() {
 		fmt.Println("Failed to generate TOTP token")
 		return
 	}
-	totpEncoded := base64.RawURLEncoding.EncodeToString(totpRaw)[:16]
+	totpEncoded := base32.StdEncoding.EncodeToString(totpRaw)[:16]
 
 	// Generate and display TOTP QR code
 	qrterminal.Generate(fmt.Sprintf(
