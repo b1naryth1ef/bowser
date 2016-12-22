@@ -235,8 +235,32 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	ssh.Unmarshal(newChannel.ExtraData(), &msg)
 	address := fmt.Sprintf("%s:%d", msg.RAddr, msg.RPort)
 
+	// Check the whitelist first
+	if s.Account.whitelistRe != nil {
+		if !s.Account.whitelistRe.Match([]byte(msg.RAddr)) {
+			s.log.Error(
+				"Rejecting forward: does not match whitelist",
+				zap.String("id", s.UUID),
+				zap.String("host", msg.RAddr))
+			newChannel.Reject(ssh.ConnectionFailed, "invalid permissions")
+			return
+		}
+	}
+
+	// Then check against blacklist
+	if s.Account.blacklistRe != nil {
+		if s.Account.blacklistRe.Match([]byte(msg.RAddr)) {
+			s.log.Error(
+				"Rejecting forward: matches blacklist",
+				zap.String("id", s.UUID),
+				zap.String("host", msg.RAddr))
+			newChannel.Reject(ssh.ConnectionFailed, "invalid permissions")
+			return
+		}
+	}
+
 	for _, wp := range s.State.WebhookProviders {
-		wp.NotifySessionStart(s.Conn.User(), s.UUID, string(msg.RAddr), fmt.Sprintf("%s", s.Conn.RemoteAddr()))
+		wp.NotifySessionStart(s.Conn.User(), s.UUID, msg.RAddr, fmt.Sprintf("%s", s.Conn.RemoteAddr()))
 	}
 
 	conn, err := net.Dial("tcp", address)

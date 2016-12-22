@@ -3,6 +3,7 @@ package bowser
 import (
 	"encoding/json"
 	"io/ioutil"
+	"regexp"
 )
 
 type AccountMFA struct {
@@ -15,7 +16,11 @@ type Account struct {
 	Password   string     `json:"password"`
 	SSHKeysRaw []string   `json:"ssh-keys"`
 	MFA        AccountMFA `json:"mfa,omitempty"`
-	Scopes     []string   `json:"scopes"`
+	Whitelist  string     `json:"whitelist"`
+	Blacklist  string     `json:"blacklist"`
+
+	whitelistRe *regexp.Regexp
+	blacklistRe *regexp.Regexp
 }
 
 // The base config which stores mostly paths and some general configuration info

@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 
 	"github.com/pquerna/otp/totp"
@@ -84,6 +85,22 @@ func (s *SSHDState) reloadAccounts() {
 		}
 
 		accounts[account.Username] = &account
+
+		if account.Whitelist != "" {
+			account.whitelistRe, err = regexp.Compile(account.Whitelist)
+			if err != nil {
+				s.log.Error("Failed to parse whitelist regex", zap.String("regex", account.Whitelist))
+				return
+			}
+		}
+
+		if account.Blacklist != "" {
+			account.blacklistRe, err = regexp.Compile(account.Blacklist)
+			if err != nil {
+				s.log.Error("Failed to parse blacklist regex", zap.String("regex", account.Blacklist))
+				return
+			}
+		}
 
 		for _, key := range account.SSHKeysRaw {
 			key, err := NewAccountKey(&account, []byte(key))
