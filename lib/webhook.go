@@ -19,26 +19,21 @@ type Embed struct {
 }
 
 type WebhookProvider interface {
-	NotifyNewSession(username, host string) error
+	NotifySessionStart(username, sessionID, proxyHost, sourceHost string) error
+	NotifySessionEnd(username, sessionID, proxyHost, sourceHost string) error
 }
 
 type DiscordWebhookProvider struct {
 	URL string
 }
 
-func (d DiscordWebhookProvider) NotifyNewSession(username, host string) error {
-	data, err := json.Marshal(MessagePayload{Embeds: []Embed{Embed{
-		Title:       "New SSH Session",
-		Description: fmt.Sprintf("**%s** started a new session on **%s**", username, host),
-		Color:       7855479,
-	}}})
-
+func (d DiscordWebhookProvider) send(payload MessagePayload) (err error) {
+	data, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return
 	}
 
 	req, err := http.NewRequest("POST", d.URL, bytes.NewBuffer(data))
-
 	if err != nil {
 		return err
 	}
@@ -49,4 +44,30 @@ func (d DiscordWebhookProvider) NotifyNewSession(username, host string) error {
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
 	return err
+}
+
+func (d DiscordWebhookProvider) NotifySessionStart(username, sessionID, proxyHost, sourceHost string) error {
+	return d.send(MessagePayload{Embeds: []Embed{Embed{
+		Title: fmt.Sprintf("SSH session started by %s", username),
+		Description: fmt.Sprintf(
+			"**Host:** %s\n**Source:** %s\n**Session:** `%s`\n",
+			proxyHost,
+			sourceHost,
+			sessionID,
+		),
+		Color: 7855479,
+	}}})
+}
+
+func (d DiscordWebhookProvider) NotifySessionEnd(username, sessionID, proxyHost, sourceHost string) error {
+	return d.send(MessagePayload{Embeds: []Embed{Embed{
+		Title: fmt.Sprintf("SSH session ended by %s", username),
+		Description: fmt.Sprintf(
+			"**Host:** %s\n**Source:** %s\n**Session:** `%s`\n",
+			proxyHost,
+			sourceHost,
+			sessionID,
+		),
+		Color: 16738657,
+	}}})
 }

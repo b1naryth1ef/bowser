@@ -231,7 +231,7 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	address := fmt.Sprintf("%s:%d", msg.RAddr, msg.RPort)
 
 	for _, wp := range s.State.WebhookProviders {
-		wp.NotifyNewSession(s.Conn.User(), address)
+		wp.NotifySessionStart(s.Conn.User(), s.UUID, string(msg.RAddr), fmt.Sprintf("%s", s.Conn.RemoteAddr()))
 	}
 
 	conn, err := net.Dial("tcp", address)
@@ -250,6 +250,9 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	go ssh.DiscardRequests(reqs)
 	var closer sync.Once
 	closeFunc := func() {
+		for _, wp := range s.State.WebhookProviders {
+			wp.NotifySessionEnd(s.Conn.User(), s.UUID, string(msg.RAddr), fmt.Sprintf("%s", s.Conn.RemoteAddr()))
+		}
 		agentChan.Close()
 		channel.Close()
 		conn.Close()
