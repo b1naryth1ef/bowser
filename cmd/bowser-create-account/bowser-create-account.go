@@ -18,6 +18,7 @@ import (
 var configPath = flag.String("config", "config.json", "path to config file")
 
 func main() {
+	flag.Parse()
 	reader := bufio.NewReader(os.Stdin)
 
 	// Grab username
