@@ -75,10 +75,15 @@ func NewSSHSession(state *SSHDState, conn *ssh.ServerConn) *SSHSession {
 }
 
 func (s *SSHSession) handleChannels(chans <-chan ssh.NewChannel) {
-	// Service the incoming Channel channel in go routine
 	for newChannel := range chans {
 		go s.handleChannel(newChannel)
 	}
+
+	delete(s.State.sessions, s.UUID)
+}
+
+func (s *SSHSession) Close() {
+	s.Conn.Close()
 }
 
 func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {

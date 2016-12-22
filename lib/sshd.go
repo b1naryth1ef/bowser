@@ -5,6 +5,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/pquerna/otp/totp"
 	"github.com/uber-go/zap"
@@ -24,6 +27,7 @@ type SSHDState struct {
 	log              zap.Logger
 	accounts         map[string]*Account
 	keys             map[string]*AccountKey
+	sessions         map[string]*SSHSession
 
 	// Caches a session ID, to the validity state
 	sessionValidityCache map[string]*Account
@@ -54,6 +58,7 @@ func NewSSHDState(configPath string) *SSHDState {
 		ca:                   ca,
 		log:                  zap.New(zap.NewJSONEncoder()),
 		sessionValidityCache: make(map[string]*Account),
+		sessions:             make(map[string]*SSHSession),
 	}
 
 	state.reloadAccounts()
@@ -103,6 +108,18 @@ func (s *SSHDState) reloadAccounts() {
 
 	s.accounts = accounts
 	s.keys = keys
+
+	// Now, iterate over sessions and close any invalid ones
+	for _, session := range s.sessions {
+		if _, exists := accounts[session.Account.Username]; !exists {
+			s.log.Warn(
+				"Closing session for user that was deleted from accounts",
+				zap.String("username", session.Account.Username),
+				zap.String("session", session.UUID))
+
+			session.Close()
+		}
+	}
 }
 
 var badKeyError = fmt.Errorf("Invalid SSH key")
@@ -205,6 +222,9 @@ func (s *SSHDState) Run() {
 		log.Fatalf("Failed to listen on %s: %s", s.Config.Bind, err)
 	}
 
+	// Start listening for SIGHUP (e.g. reload accounts)
+	go s.handleSignals()
+
 	// Begin listening and accepting connections
 	log.Printf("Listening on %v", s.Config.Bind)
 	for {
@@ -221,8 +241,9 @@ func (s *SSHDState) Run() {
 			continue
 		}
 
-		// Open the SSH session struct on the connection
+		// Open the SSH session for the connection, and track it in our sessions mapping
 		session := NewSSHSession(s, sshConn)
+		s.sessions[session.UUID] = session
 
 		s.log.Info(
 			"New SSH connection",
@@ -235,4 +256,21 @@ func (s *SSHDState) Run() {
 		// Run the core loop which handles channels
 		go session.handleChannels(chans)
 	}
+}
+
+// TODO: close stuff cleanly
+func (s *SSHDState) handleSignals() {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGHUP)
+
+	go func() {
+		for {
+			sig := <-signals
+
+			if sig == syscall.SIGHUP {
+				s.log.Info("Reloading accounts")
+				s.reloadAccounts()
+			}
+		}
+	}()
 }
