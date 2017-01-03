@@ -1,5 +1,11 @@
 package main
 
+/*
+	This script is responsible for provisioning and adding user accounts to our
+	configuration. Generally it was meant to be run on the bastion box with the
+	configuration path passed, thus automatically adding the account.
+*/
+
 import (
 	"bufio"
 	"crypto/rand"
@@ -17,6 +23,32 @@ import (
 
 var configPath = flag.String("config", "config.json", "path to config file")
 
+func readPassword(attempts int) string {
+	// Create a raw terminal so we can read the password without echo
+	oldState, err := terminal.MakeRaw(0)
+	if err != nil {
+		panic(err)
+	}
+
+	// Restore terminal
+	defer terminal.Restore(0, oldState)
+	defer fmt.Printf("\r\n")
+
+	// Give the user N attempts
+	for i := 0; i < attempts; i++ {
+		fmt.Printf("\rPassword: ")
+		a, _ := terminal.ReadPassword(0)
+		fmt.Printf("\n\rConfirm: ")
+		b, _ := terminal.ReadPassword(0)
+
+		if string(a) == string(b) {
+			return string(a)
+		}
+	}
+
+	return ""
+}
+
 func main() {
 	flag.Parse()
 	reader := bufio.NewReader(os.Stdin)
@@ -25,40 +57,26 @@ func main() {
 	fmt.Printf("Username: ")
 	username, _ := reader.ReadString('\n')
 
-	// Grab SSH key
-	fmt.Printf("SSH Key: ")
+	// Grab SSH Public key
+	fmt.Printf("SSH Public Key: ")
 	sshKey, _ := reader.ReadString('\n')
 
 	// Grab password
-	oldState, err := terminal.MakeRaw(0)
-	if err != nil {
-		panic(err)
-	}
-	defer terminal.Restore(0, oldState)
-
-	fmt.Printf("\rPassword: ")
-	a, _ := terminal.ReadPassword(0)
-	fmt.Printf("\n\rConfirm: ")
-	b, _ := terminal.ReadPassword(0)
-
-	if string(a) != string(b) {
-		fmt.Println("\rPasswords do not match!")
+	password := readPassword(3)
+	if password == "" {
 		return
 	}
-
-	bcryptHash, _ := bcrypt.GenerateFromPassword(a, 12)
-
-	// Restore terminal
-	terminal.Restore(0, oldState)
-	fmt.Printf("\r\n")
+	bcryptHash, _ := bcrypt.GenerateFromPassword([]byte(password), 12)
 
 	// Generate TOTP code
 	totpRaw := make([]byte, 32)
-	_, err = rand.Read(totpRaw)
+	_, err := rand.Read(totpRaw)
 	if err != nil {
 		fmt.Println("Failed to generate TOTP token")
 		return
 	}
+
+	// Encode the TOTP token as base32 and truncate to 16 characters
 	totpEncoded := base32.StdEncoding.EncodeToString(totpRaw)[:16]
 
 	// Generate and display TOTP QR code
@@ -70,7 +88,7 @@ func main() {
 	fmt.Printf("Please scan the above QR code with your TOTP app (or enter manually: `%s`)", totpEncoded)
 	reader.ReadString('\n')
 
-	// Create and serialize account to stdout
+	// Create a new account struct
 	account := bowser.Account{
 		Username:   username[:len(username)-1],
 		Password:   string(bcryptHash),
@@ -78,6 +96,8 @@ func main() {
 		MFA:        bowser.AccountMFA{TOTP: string(totpEncoded)},
 	}
 
+	// If the configuration path was passed, we can attempt to append this to the
+	//  accounts file.
 	if *configPath != "" {
 		config, err := bowser.LoadConfig(*configPath)
 		if err != nil {
@@ -97,6 +117,7 @@ func main() {
 			return
 		}
 	} else {
+		// Otherwise, we just echo the payload to stdout
 		data, _ := json.Marshal(account)
 		fmt.Printf("\r\n%s\n", data)
 	}
