@@ -160,6 +160,10 @@ func (s *SSHDState) Run() {
 
 			// If the username doesn't match, break
 			if conn.User() != accountKey.Account.Username {
+				s.log.Warn(
+					"Username did not match SSH key",
+					zap.String("conn-username", conn.User()),
+					zap.String("key-username", accountKey.Account.Username))
 				return nil, badKeyError
 			}
 
@@ -179,18 +183,28 @@ func (s *SSHDState) Run() {
 			// Make sure their SSH key was previously validated
 			account, exists := s.sessionValidityCache[string(conn.SessionID())]
 			if !exists {
+				s.log.Warn(
+					"Could not find session in validity cache",
+					zap.String("session-id", string(conn.SessionID())))
 				return nil, badKeyError
 			}
 
 			// Request and validate the clients password
 			passwordAnswer, err := client(conn.User(), "", []string{"Password: "}, []bool{false})
 			if err != nil {
+				s.log.Warn(
+					"SSH Client did not accept our keyboard interactive request",
+					zap.String("username", conn.User()),
+					zap.Error(err))
 				return nil, badPasswordError
 			}
 
 			// Check if the password matches
 			err = bcrypt.CompareHashAndPassword([]byte(account.Password), []byte(passwordAnswer[0]))
 			if err != nil {
+				s.log.Warn(
+					"Incorrect password",
+					zap.String("username", conn.User()))
 				return nil, badPasswordError
 			}
 
@@ -211,9 +225,13 @@ func (s *SSHDState) Run() {
 			}
 
 			if !verified {
+				s.log.Warn(
+					"Incorrect MFA token",
+					zap.String("username", conn.User()))
 				return nil, badMFAError
 			}
 
+			s.log.Info("Completed basic authentication checks", zap.String("username", conn.User()))
 			return nil, nil
 		},
 	}
