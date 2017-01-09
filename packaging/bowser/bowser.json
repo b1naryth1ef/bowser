@@ -1,0 +1,6 @@
+{
+  "bind": "0.0.0.0:22",
+  "accounts_path": "/etc/bowser/accounts.json",
+  "id_rsa_path": "/etc/bowser/id_rsa.key",
+  "ca_key_path": "/etc/bowser/ca.key"
+}

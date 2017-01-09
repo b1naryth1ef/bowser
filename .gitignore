@@ -1,4 +1,5 @@
-*.json
+/*.json
 id_rsa
 recordings/
 *.db
+*.deb
