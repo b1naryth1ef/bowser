@@ -208,27 +208,29 @@ func (s *SSHDState) Run() {
 				return nil, badPasswordError
 			}
 
-			// Request and validate the clients MFA code
-			var verified bool
+			// If the user has MFA enabled, request and validate their MFA code/token
+			if account.MFA.TOTP == "" {
+				var verified bool
 
-			for i := 0; i < 3; i++ {
-				mfaAnswer, err := client(conn.User(), "", []string{"MFA Token: "}, []bool{true})
+				for i := 0; i < 3; i++ {
+					mfaAnswer, err := client(conn.User(), "", []string{"MFA Code: "}, []bool{true})
 
-				if err != nil {
-					continue
+					if err != nil {
+						continue
+					}
+
+					if totp.Validate(mfaAnswer[0], account.MFA.TOTP) {
+						verified = true
+						break
+					}
 				}
 
-				if totp.Validate(mfaAnswer[0], account.MFA.TOTP) {
-					verified = true
-					break
+				if !verified {
+					s.log.Warn(
+						"Incorrect MFA code",
+						zap.String("username", conn.User()))
+					return nil, badMFAError
 				}
-			}
-
-			if !verified {
-				s.log.Warn(
-					"Incorrect MFA token",
-					zap.String("username", conn.User()))
-				return nil, badMFAError
 			}
 
 			s.log.Info("Completed basic authentication checks", zap.String("username", conn.User()))
