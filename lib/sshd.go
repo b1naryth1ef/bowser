@@ -209,7 +209,7 @@ func (s *SSHDState) Run() {
 			}
 
 			// If the user has MFA enabled, request and validate their MFA code/token
-			if account.MFA.TOTP == "" {
+			if account.MFA.TOTP != "" {
 				var verified bool
 
 				for i := 0; i < 3; i++ {
