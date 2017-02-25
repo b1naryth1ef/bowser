@@ -54,7 +54,9 @@ func NewSSHDState(configPath string) *SSHDState {
 	}
 
 	zaplog, err := zap.NewProduction()
-	log.Panicf("Failed to create logger: %v", err)
+	if err != nil {
+		log.Panicf("Failed to create logger: %v", err)
+	}
 
 	state := SSHDState{
 		Config:               config,
