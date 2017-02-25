@@ -9,7 +9,7 @@ import (
 
 	_ "github.com/pquerna/otp/totp"
 	"github.com/satori/go.uuid"
-	"github.com/uber-go/zap"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	_ "golang.org/x/crypto/ssh/terminal"
@@ -49,7 +49,7 @@ type SSHSession struct {
 	Conn    *ssh.ServerConn
 
 	verified bool
-	log      zap.Logger
+	log      *zap.Logger
 }
 
 func NewSSHSession(state *SSHDState, conn *ssh.ServerConn) *SSHSession {
@@ -63,7 +63,7 @@ func NewSSHSession(state *SSHDState, conn *ssh.ServerConn) *SSHSession {
 		zap.String("username", conn.User()),
 		zap.String("session-id", string(conn.SessionID())),
 		zap.String("client-version", string(conn.ClientVersion())),
-		zap.Object("remote-addr", conn.RemoteAddr().String()))
+		zap.String("remote-addr", conn.RemoteAddr().String()))
 
 	return &SSHSession{
 		UUID:    string(strID),

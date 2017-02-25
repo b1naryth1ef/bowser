@@ -11,7 +11,7 @@ import (
 	"syscall"
 
 	"github.com/pquerna/otp/totp"
-	"github.com/uber-go/zap"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh"
 )
@@ -25,7 +25,7 @@ type SSHDState struct {
 
 	WebhookProviders []WebhookProvider
 	ca               *CertificateAuthority
-	log              zap.Logger
+	log              *zap.Logger
 	accounts         map[string]*Account
 	keys             map[string]*AccountKey
 	sessions         map[string]*SSHSession
@@ -53,11 +53,14 @@ func NewSSHDState(configPath string) *SSHDState {
 		providers = append(providers, DiscordWebhookProvider{URL: url})
 	}
 
+	zaplog, err := zap.NewProduction()
+	log.Panicf("Failed to create logger: %v", err)
+
 	state := SSHDState{
 		Config:               config,
 		WebhookProviders:     providers,
 		ca:                   ca,
-		log:                  zap.New(zap.NewJSONEncoder()),
+		log:                  zaplog,
 		sessionValidityCache: make(map[string]*Account),
 		sessions:             make(map[string]*SSHSession),
 	}
@@ -108,13 +111,13 @@ func (s *SSHDState) reloadAccounts() {
 				s.log.Warn(
 					"Skipping key for account, couldn't parse",
 					zap.Error(err),
-					zap.Object("account", account))
+					zap.String("account", account.Username))
 				continue
 			}
 
 			other, exists := keys[key.ID()]
 			if exists {
-				s.log.Error("Duplicate key", zap.Object("account a", other.Account), zap.Object("account b", account))
+				s.log.Error("Duplicate key", zap.String("account a", other.Account.Username), zap.String("account b", other.Account.Username))
 				return
 			}
 
@@ -271,28 +274,32 @@ func (s *SSHDState) Run() {
 			continue
 		}
 
-		// After opening the connection, attempt a handshake
-		sshConn, chans, reqs, err := ssh.NewServerConn(tcpConn, sshConfig)
-		if err != nil {
-			s.log.Warn("Failed to handshake", zap.Error(err))
-			continue
-		}
-
-		// Open the SSH session for the connection, and track it in our sessions mapping
-		session := NewSSHSession(s, sshConn)
-		s.sessions[session.UUID] = session
-
-		s.log.Info(
-			"New SSH connection",
-			zap.String("remote", sshConn.RemoteAddr().String()),
-			zap.String("version", string(sshConn.ClientVersion())))
-
-		// Discard all global out-of-band Requests
-		go ssh.DiscardRequests(reqs)
-
-		// Run the core loop which handles channels
-		go session.handleChannels(chans)
+		go s.handleNewConnection(tcpConn, sshConfig)
 	}
+}
+
+func (s *SSHDState) handleNewConnection(tcpConn net.Conn, sshConfig *ssh.ServerConfig) {
+	// After opening the connection, attempt a handshake
+	sshConn, chans, reqs, err := ssh.NewServerConn(tcpConn, sshConfig)
+	if err != nil {
+		s.log.Warn("Failed to handshake", zap.Error(err))
+		return
+	}
+
+	// Open the SSH session for the connection, and track it in our sessions mapping
+	session := NewSSHSession(s, sshConn)
+	s.sessions[session.UUID] = session
+
+	s.log.Info(
+		"New SSH connection",
+		zap.String("remote", sshConn.RemoteAddr().String()),
+		zap.String("version", string(sshConn.ClientVersion())))
+
+	// Discard all global out-of-band Requests
+	go ssh.DiscardRequests(reqs)
+
+	// Run the core loop which handles channels
+	go session.handleChannels(chans)
 }
 
 // TODO: close stuff cleanly
