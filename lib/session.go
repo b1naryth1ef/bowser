@@ -279,9 +279,6 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	go ssh.DiscardRequests(reqs)
 	var closer sync.Once
 	closeFunc := func() {
-		for _, wp := range s.State.WebhookProviders {
-			wp.NotifySessionEnd(s.Conn.User(), s.UUID, string(msg.RAddr), fmt.Sprintf("%s", s.Conn.RemoteAddr()))
-		}
 		agentChan.Close()
 		channel.Close()
 		conn.Close()
