@@ -50,3 +50,9 @@ Host credit-card-database1
   Hostname credit-card-database1.my.corp
   ProxyCommand ssh -W %h:%p bastion
 ```
+
+## FAQ
+
+### OpenSSH fails with "no private key for certificate"
+
+This is caused by [this](https://bugzilla.mindrot.org/show_bug.cgi?id=2550) OpenSSH bug. Upgrade your version of OpenSSH to resolve.
