@@ -25,8 +25,9 @@ type Account struct {
 
 // HTTP Config which holds information for the built-in HTTP API server
 type HTTPServerConfig struct {
-	Enabled bool   `json:"enabled"`
-	Bind    string `json:"bind"`
+	Enabled bool     `json:"enabled"`
+	Bind    string   `json:"bind"`
+	APIKeys []string `json:"api_keys"`
 }
 
 // The base config which stores mostly paths and some general configuration info
