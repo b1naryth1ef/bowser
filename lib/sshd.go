@@ -139,7 +139,7 @@ func (s *SSHDState) reloadAccounts() {
 				zap.String("username", session.Account.Username),
 				zap.String("session", session.UUID))
 
-			session.Close()
+			session.Close("Account Invalidated")
 		}
 	}
 }
@@ -149,6 +149,11 @@ var badPasswordError = fmt.Errorf("Invalid password")
 var badMFAError = fmt.Errorf("Invalid MFA code")
 
 func (s *SSHDState) Run() {
+	if s.Config.HTTPServer.Enabled {
+		httpServer := NewHTTPServer(s)
+		go httpServer.Run()
+	}
+
 	sshConfig := &ssh.ServerConfig{
 		NoClientAuth: false,
 

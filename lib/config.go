@@ -23,15 +23,22 @@ type Account struct {
 	blacklistRe *regexp.Regexp
 }
 
+// HTTP Config which holds information for the built-in HTTP API server
+type HTTPServerConfig struct {
+	Enabled bool   `json:"enabled"`
+	Bind    string `json:"bind"`
+}
+
 // The base config which stores mostly paths and some general configuration info
 type Config struct {
-	Bind            string   `json:"bind"`
-	AccountsPath    string   `json:"accounts_path"`
-	IDRSAPath       string   `json:"id_rsa_path"`
-	CAKeyPath       string   `json:"ca_key_path"`
-	DiscordWebhooks []string `json:"discord_webhooks"`
-	ForceCommand    string   `json:"force_command"`
-	ForceUser       string   `json:"force_user"`
+	Bind            string           `json:"bind"`
+	AccountsPath    string           `json:"accounts_path"`
+	IDRSAPath       string           `json:"id_rsa_path"`
+	CAKeyPath       string           `json:"ca_key_path"`
+	DiscordWebhooks []string         `json:"discord_webhooks"`
+	ForceCommand    string           `json:"force_command"`
+	ForceUser       string           `json:"force_user"`
+	HTTPServer      HTTPServerConfig `json:"http_server"`
 }
 
 func LoadConfig(path string) (*Config, error) {

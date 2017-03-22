@@ -48,6 +48,9 @@ type SSHSession struct {
 	Account *Account
 	Conn    *ssh.ServerConn
 
+	// Contains an array of all "sub" SSH proxy connections this session has
+	Proxies []net.Conn
+
 	verified bool
 	log      *zap.Logger
 }
@@ -82,7 +85,7 @@ func (s *SSHSession) handleChannels(chans <-chan ssh.NewChannel) {
 	delete(s.State.sessions, s.UUID)
 }
 
-func (s *SSHSession) Close() {
+func (s *SSHSession) Close(message string) {
 	s.Conn.Close()
 }
 
@@ -273,6 +276,8 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 		newChannel.Reject(ssh.ConnectionFailed, fmt.Sprintf("error: %v", err))
 		return
 	}
+
+	s.Proxies = append(s.Proxies, conn)
 
 	channel, reqs, err := newChannel.Accept()
 
