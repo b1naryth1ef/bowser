@@ -12,14 +12,12 @@ pushd build
 mkdir -p usr/bin
 mkdir -p etc
 
-# Build bowse
+# Build bowser
 go build ../../cmd/bowser/bowser.go
-go build ../../cmd/bowser-create-account/bowser-create-account.go
 
 # Copy files in place
 mv bowser usr/bin/
-mv bowser-create-account usr/bin/
-cp -r bowser etc/
+cp -r ../bowser etc/
 
 popd
 
