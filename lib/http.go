@@ -1,11 +1,15 @@
 package bowser
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
+	"golang.org/x/crypto/ssh"
 )
 
 type HTTPServer struct {
@@ -44,11 +48,72 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *HTTPServer) isAuthorized(r *http.Request) bool {
+	// First, check if we have an auth header which matches any API keys
 	auth := r.Header.Get("Authorization")
-
 	for _, key := range s.sshd.Config.HTTPServer.APIKeys {
 		if key == auth {
 			return true
+		}
+	}
+
+	// Otherwise, try to authenticate w/ our custom SSH agent auth
+	sshAuthSignature, err := base64.StdEncoding.DecodeString(r.Header.Get("SSH-Auth-Signature"))
+	if err != nil {
+		return false
+	}
+
+	sshAuthKey := r.Header.Get("SSH-Auth-Key")
+	sshAuthConnection := r.Header.Get("SSH-Auth-Connection")
+	sshAuthTimestamp := r.Header.Get("SSH-Auth-Timestamp")
+
+	if len(sshAuthSignature) <= 0 || sshAuthKey == "" || sshAuthConnection == "" || sshAuthTimestamp == "" {
+		return false
+	}
+
+	// Attempt to find the given session
+	var foundSession *SSHSession
+	for _, sshSession := range s.sshd.sessions {
+		for _, conn := range sshSession.Proxies {
+			if sshAuthConnection == conn.LocalAddr().String() {
+				foundSession = sshSession
+				break
+			}
+		}
+	}
+
+	if foundSession == nil {
+		return false
+	}
+
+	// Now grab all the keys for the session
+	keys, err := foundSession.Agent.List()
+	if err != nil {
+		return false
+	}
+
+	timestamp, err := strconv.Atoi(sshAuthTimestamp)
+	if err != nil {
+		return false
+	}
+
+	// Timestamp should not be more than 10 seconds
+	diff := timestamp - int(time.Now().Unix())
+	if diff < 0 || diff > 10 {
+		return false
+	}
+	// todo validate timestamp
+
+	// Find the key used to sign the signature, and verify it
+	for _, key := range keys {
+		if key.String() == sshAuthKey {
+			err = key.Verify([]byte(sshAuthTimestamp), &ssh.Signature{
+				Format: "ssh-rsa",
+				Blob:   sshAuthSignature,
+			})
+
+			if err == nil {
+				return true
+			}
 		}
 	}
 
@@ -56,17 +121,21 @@ func (s *HTTPServer) isAuthorized(r *http.Request) bool {
 }
 
 type JSONSession struct {
-	UUID        string   `json:"uuid"`
-	Username    string   `json:"username"`
-	Version     string   `json:"version"`
-	ClientAddr  string   `json:"client-addr"`
-	Connections []string `json:"connections"`
+	UUID        string                 `json:"uuid"`
+	Username    string                 `json:"username"`
+	SSHKeys     []string               `json:"ssh_keys"`
+	Metadata    map[string]interface{} `json:"metadata"`
+	Version     string                 `json:"version"`
+	ClientAddr  string                 `json:"client-addr"`
+	Connections []string               `json:"connections"`
 }
 
 func SessionToJSONSession(sshSession *SSHSession) JSONSession {
 	session := JSONSession{
 		UUID:       sshSession.UUID,
 		Username:   sshSession.Account.Username,
+		SSHKeys:    sshSession.Account.SSHKeysRaw,
+		Metadata:   sshSession.Account.Metadata,
 		Version:    string(sshSession.Conn.ClientVersion()),
 		ClientAddr: sshSession.Conn.RemoteAddr().String(),
 	}

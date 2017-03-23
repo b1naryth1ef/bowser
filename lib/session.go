@@ -47,6 +47,7 @@ type SSHSession struct {
 	State   *SSHDState
 	Account *Account
 	Conn    *ssh.ServerConn
+	Agent   agent.Agent
 
 	// Contains an array of all "sub" SSH proxy connections this session has
 	Proxies []net.Conn
@@ -126,14 +127,14 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	go ssh.DiscardRequests(agentReqs)
 
 	// Open an agent on the channel
-	ag := agent.NewClient(agentChan)
+	s.Agent = agent.NewClient(agentChan)
 
 	// If the session has not been verified yet, we must do that now by taking a
 	//  random string, requesting their agent encrypt it with a known public key,
 	//  and validating the results. This verifies ownership of the public key, even
 	//  though it is not used as the primary authentication scheme for the session.
 	if !s.verified {
-		signers, err := ag.Signers()
+		signers, err := s.Agent.Signers()
 		if err != nil {
 			s.log.Error(
 				"Rejecting forward: failed to get list of signers from agent",
@@ -216,7 +217,7 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	}
 
 	// Now we add the generated key and certificate to the users agent
-	err = ag.Add(agent.AddedKey{
+	err = s.Agent.Add(agent.AddedKey{
 		PrivateKey:   privateKey,
 		Certificate:  cert,
 		LifetimeSecs: 60,

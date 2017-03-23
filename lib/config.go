@@ -12,12 +12,13 @@ type AccountMFA struct {
 
 // Accounts represent individual users (auth keys) that can login
 type Account struct {
-	Username   string     `json:"username"`
-	Password   string     `json:"password"`
-	SSHKeysRaw []string   `json:"ssh-keys"`
-	MFA        AccountMFA `json:"mfa,omitempty"`
-	Whitelist  string     `json:"whitelist"`
-	Blacklist  string     `json:"blacklist"`
+	Username   string                 `json:"username"`
+	Password   string                 `json:"password"`
+	Metadata   map[string]interface{} `json:"metadata"`
+	SSHKeysRaw []string               `json:"ssh-keys"`
+	MFA        AccountMFA             `json:"mfa,omitempty"`
+	Whitelist  string                 `json:"whitelist"`
+	Blacklist  string                 `json:"blacklist"`
 
 	whitelistRe *regexp.Regexp
 	blacklistRe *regexp.Regexp
