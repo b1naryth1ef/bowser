@@ -9,10 +9,10 @@ install:
   - go get github.com/b1naryth1ef/bowser/cmd/bowser
   - go get github.com/b1naryth1ef/bowser/cmd/bowser-create-account
   - mkdir release/
-  - GOOS=linux GOARCH=amd64 go build github.com/b1naryth1ef/bowser/cmd/bowser -o release/bowser-linux-amd64
-  - GOOS=linux GOARCH=amd64 go build github.com/b1naryth1ef/bowser/cmd/bowser-create-account -o release/bowser-create-account-linux-amd64
-  - GOOS=darwin GOARCH=amd64 go build github.com/b1naryth1ef/bowser/cmd/bowser -o release/bowser-darwin-amd64
-  - GOOS=darwin GOARCH=amd64 go build github.com/b1naryth1ef/bowser/cmd/bowser-create-account -o release/bowser-create-account-drawin-amd64
+  - GOOS=linux GOARCH=amd64 go build -o release/bowser-linux-amd64 github.com/b1naryth1ef/bowser/cmd/bowser
+  - GOOS=linux GOARCH=amd64 go build -o release/bowser-create-account-linux-amd64 github.com/b1naryth1ef/bowser/cmd/bowser-create-account
+  - GOOS=darwin GOARCH=amd64 go build -o release/bowser-darwin-amd64 github.com/b1naryth1ef/bowser/cmd/bowser
+  - GOOS=darwin GOARCH=amd64 go build -o release/bowser-create-account-darwin-amd64 github.com/b1naryth1ef/bowser/cmd/bowser-create-account
 
 deploy:
   provider: releases
