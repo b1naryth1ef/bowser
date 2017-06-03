@@ -7,12 +7,10 @@ import (
 	"net"
 	"sync"
 
-	_ "github.com/pquerna/otp/totp"
 	"github.com/satori/go.uuid"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
-	_ "golang.org/x/crypto/ssh/terminal"
 )
 
 // An account key represents a mapping of ssh public key to account

@@ -8,20 +8,46 @@ package main
 
 import (
 	"bufio"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha1"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/b1naryth1ef/bowser/lib"
 	"github.com/mdp/qrterminal"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
 var configPath = flag.String("config", "config.json", "path to config file")
+
+func encryptTOTP(password []byte, salt []byte, totp []byte) ([]byte, error) {
+	dk := pbkdf2.Key(password, salt, 10000, 32, sha1.New)
+
+	block, err := aes.NewCipher(dk)
+	if err != nil {
+		return nil, err
+	}
+
+	ciphertext := make([]byte, aes.BlockSize+len(totp))
+	iv := ciphertext[:aes.BlockSize]
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return nil, err
+	}
+
+	stream := cipher.NewCFBEncrypter(block, iv)
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], totp)
+
+	return []byte(base64.URLEncoding.EncodeToString(ciphertext)), nil
+}
 
 func readPassword(attempts int) string {
 	// Create a raw terminal so we can read the password without echo
@@ -72,7 +98,7 @@ func main() {
 	totpRaw := make([]byte, 32)
 	_, err := rand.Read(totpRaw)
 	if err != nil {
-		fmt.Println("Failed to generate TOTP token")
+		fmt.Printf("Failed to generate TOTP token: %s\n", err)
 		return
 	}
 
@@ -88,12 +114,19 @@ func main() {
 	fmt.Printf("Please scan the above QR code with your TOTP app (or enter manually: `%s`)", totpEncoded)
 	reader.ReadString('\n')
 
+	// Now encrypt the TOTP token with the password
+	totpEncrypted, err := encryptTOTP([]byte(password), []byte(username[:len(username)-1]), []byte(totpEncoded))
+	if err != nil {
+		fmt.Printf("Failed to encrypt TOTP token: %v\n", err)
+		return
+	}
+
 	// Create a new account struct
 	account := bowser.Account{
 		Username:   username[:len(username)-1],
 		Password:   string(bcryptHash),
 		SSHKeysRaw: []string{sshKey[:len(sshKey)-1]},
-		MFA:        bowser.AccountMFA{TOTP: string(totpEncoded)},
+		MFA:        bowser.AccountMFA{TOTP: string(totpEncrypted)},
 	}
 
 	// If the configuration path was passed, we can attempt to append this to the
