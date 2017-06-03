@@ -1,7 +1,6 @@
 language: go
 go:
   - 1.8.x
-  - master
 
 install:
   - go get github.com/b1naryth1ef/bowser/cmd/bowser
@@ -24,4 +23,4 @@ deploy:
     - release/bowser-create-account-darwin-amd64
   on:
     repo: b1naryth1ef/bowser
-    condition: $TRAVIS_GO_VERSION =~ ^1\.8\.[0-9]+$
+    tags: true
