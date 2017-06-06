@@ -1,9 +1,15 @@
 package bowser
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"io/ioutil"
 	"regexp"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
 type AccountMFA struct {
@@ -71,4 +77,26 @@ func (c *Config) SaveAccounts(acts []Account) (err error) {
 
 	err = ioutil.WriteFile(c.AccountsPath, data, 644)
 	return
+}
+
+func (am *AccountMFA) decryptTOTP(password []byte, salt []byte) (string, error) {
+	dk := pbkdf2.Key(password, salt, 10000, 32, sha1.New)
+
+	ciphertext, _ := base64.URLEncoding.DecodeString(am.TOTP)
+
+	block, err := aes.NewCipher(dk)
+	if err != nil {
+		return "", err
+	}
+
+	if len(ciphertext) < aes.BlockSize {
+		return "", err
+	}
+	iv := ciphertext[:aes.BlockSize]
+	ciphertext = ciphertext[aes.BlockSize:]
+
+	stream := cipher.NewCFBDecrypter(block, iv)
+	stream.XORKeyStream(ciphertext, ciphertext)
+
+	return string(ciphertext), nil
 }

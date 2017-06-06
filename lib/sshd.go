@@ -217,6 +217,15 @@ func (s *SSHDState) Run() {
 			if account.MFA.TOTP != "" {
 				var verified bool
 
+				decryptedTOTP, err := account.MFA.decryptTOTP([]byte(passwordAnswer[0]), []byte(account.Username))
+				if err != nil {
+					s.log.Warn(
+						"Failed to decrypt TOTP token",
+						zap.String("username", conn.User()),
+						zap.Error(err))
+					return nil, badPasswordError
+				}
+
 				for i := 0; i < 3; i++ {
 					mfaAnswer, err := client(conn.User(), "", []string{"MFA Code: "}, []bool{true})
 
@@ -224,7 +233,7 @@ func (s *SSHDState) Run() {
 						continue
 					}
 
-					if totp.Validate(mfaAnswer[0], account.MFA.TOTP) {
+					if totp.Validate(mfaAnswer[0], decryptedTOTP) {
 						verified = true
 						break
 					}
