@@ -1,0 +1,26 @@
+language: go
+go:
+  - 1.8.x
+
+install:
+  - go get github.com/b1naryth1ef/bowser/cmd/bowser
+  - go get github.com/b1naryth1ef/bowser/cmd/bowser-create-account
+  - mkdir release/
+  - GOOS=linux GOARCH=amd64 go build -o release/bowser-linux-amd64 github.com/b1naryth1ef/bowser/cmd/bowser
+  - GOOS=linux GOARCH=amd64 go build -o release/bowser-create-account-linux-amd64 github.com/b1naryth1ef/bowser/cmd/bowser-create-account
+  - GOOS=darwin GOARCH=amd64 go build -o release/bowser-darwin-amd64 github.com/b1naryth1ef/bowser/cmd/bowser
+  - GOOS=darwin GOARCH=amd64 go build -o release/bowser-create-account-darwin-amd64 github.com/b1naryth1ef/bowser/cmd/bowser-create-account
+
+deploy:
+  skip_cleanup: true
+  provider: releases
+  api_key:
+    secure: JpqcZ/UXEo4Vjopo0rfuRn+fQinD1jp4dI/X3fdeyMJdjqRxtDQsvhK4bRwMWcEGvo0HCTM2Tm5Ro2PEuU+1t4yMmiUG71K4IScIAOUUS/Sz4emFOzmsJZjylqCA2LtixphAEw/zf2lPeDChthblcZ9pSsjJ9Vff/U03BvP81br0ebxEKVs/5m5sOua/OCx/EmWIyPL6ly+HdJb2yDtnHP/dl8cT8NaVq7lzT6ZxAG0QOatLjhWku11RiToEIc27duTaK5IEmJrBzMA4rJ/heNVkzRST1T/yjS+oNVjbvmxM0LiJ7n2T59Uuh4DFi2RekOG5vKziEwrD8CV9rAy/x7twlkMuyZfinmPObDQSfExS7imwgTNwmSBAdWI9kiXl+csLM5+tte0ye647by26Rsk1n4IcDEXoUV/I5TmFSBxItVIjizdZoSjjP8xK+21P1jp7HU7XVCk2gWifxUsAQ/0KVXwNmxZIHl5mAHnRBN8QUeGCv53x5qxCocWlamhx+1STeI+TzaKyTFhy1Js9NUOk99LmsAG7vUveN8Bvn2j51cf/5LqIouOaArEb4UwirKEGM6SBx7qHJrwokjb9SvOVa4nTbwCxkJFL0J+8e9FBjaSePptn0nXgRx9ywsVsyauJ7DVGK3WtSPlAE8AnItamwB8MFTri4+uPFDrNfCI=
+  file:
+    - release/bowser-linux-amd64
+    - release/bowser-create-account-linux-amd64
+    - release/bowser-darwin-amd64
+    - release/bowser-create-account-darwin-amd64
+  on:
+    repo: b1naryth1ef/bowser
+    tags: true
