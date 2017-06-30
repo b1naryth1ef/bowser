@@ -9,9 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -98,20 +100,16 @@ func NewBowserAPIClient(proto string, port string) (*BowserAPIClient, error) {
 	}, nil
 }
 
-func (b *BowserAPIClient) GetCurrentSessionInfo() (*JSONSession, error) {
-	remoteHost, remotePort, err := GetSSHClientConnection()
-	if err != nil {
-		return nil, err
-	}
-
+func (b *BowserAPIClient) request(method, url string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequest(
-		"GET",
-		fmt.Sprintf("%s/sessions/find/%s:%s", b.url, remoteHost, remotePort),
-		nil)
-
+		method,
+		fmt.Sprintf("%s%s", b.url, url),
+		body)
 	if err != nil {
 		return nil, err
 	}
+
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	// Authenticate the request
 	err = AuthenticateRequest(req)
@@ -125,8 +123,22 @@ func (b *BowserAPIClient) GetCurrentSessionInfo() (*JSONSession, error) {
 	}
 
 	// Check the status
-	if res.StatusCode != 200 {
-		return nil, APIRequestFailed
+	if res.StatusCode != 200 && res.StatusCode != 204 {
+		return res, APIRequestFailed
+	}
+
+	return res, nil
+}
+
+func (b *BowserAPIClient) GetCurrentSessionInfo() (*JSONSession, error) {
+	remoteHost, remotePort, err := GetSSHClientConnection()
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := b.request("GET", fmt.Sprintf("/sessions/find/%s:%s", remoteHost, remotePort), nil)
+	if err != nil {
+		return nil, err
 	}
 
 	data, err := ioutil.ReadAll(res.Body)
@@ -141,4 +153,36 @@ func (b *BowserAPIClient) GetCurrentSessionInfo() (*JSONSession, error) {
 	}
 
 	return result, nil
+}
+
+func (b *BowserAPIClient) ListSessions() (*[]JSONSession, error) {
+	res, err := b.request("GET", "/sessions", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]JSONSession, 0)
+	err = json.Unmarshal(data, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (b *BowserAPIClient) Jump(destination string) (err error) {
+	current, err := b.GetCurrentSessionInfo()
+	if err != nil {
+		return
+	}
+
+	form := url.Values{}
+	form.Add("destination", destination)
+	_, err = b.request("POST", fmt.Sprintf("/sessions/%s/jump", current.UUID), strings.NewReader(form.Encode()))
+	return
 }

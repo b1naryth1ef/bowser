@@ -111,6 +111,54 @@ type channelOpenDirectMsg struct {
 	LPort uint32
 }
 
+func (s *SSHSession) canConnectTo(addr string) bool {
+	// Check the whitelist first
+	if s.Account.whitelistRe != nil {
+		if !s.Account.whitelistRe.Match([]byte(addr)) {
+			return false
+		}
+	}
+
+	// Then check against blacklist
+	if s.Account.blacklistRe != nil {
+		if s.Account.blacklistRe.Match([]byte(addr)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *SSHSession) addTempAuth(addr string) error {
+	// Now that we're verified, we must ask the SSH-CA to generate and sign a valid
+	//  SSH key/cert that we can use to login.
+	var username string
+	if s.State.Config.ForceUser != "" {
+		username = s.State.Config.ForceUser
+	} else {
+		username = s.Account.Username
+	}
+
+	cert, privateKey, err := s.State.ca.Generate(s.UUID, username, s.State.Config.ForceCommand)
+	if err != nil {
+		return err
+	}
+
+	// Now we add the generated key and certificate to the users agent
+	return s.Agent.Add(agent.AddedKey{
+		PrivateKey:   privateKey,
+		Certificate:  cert,
+		LifetimeSecs: 10,
+		Comment:      fmt.Sprintf("temporary ssh certificate (%s)", addr),
+	})
+}
+
+func (s *SSHSession) notifyConnection(addr string) {
+	for _, wp := range s.State.WebhookProviders {
+		wp.NotifySessionStart(s.Conn.User(), s.UUID, addr, fmt.Sprintf("%s", s.Conn.RemoteAddr()))
+	}
+}
+
 func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	// Attempt to open a channel to the auth agent
 	agentChan, agentReqs, err := s.Conn.OpenChannel("auth-agent@openssh.com", nil)
@@ -197,75 +245,35 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 		}
 	}
 
-	// Now that we're verified, we must ask the SSH-CA to generate and sign a valid
-	//  SSH key/cert that we can use to login.
-	var username string
-	if s.State.Config.ForceUser != "" {
-		username = s.State.Config.ForceUser
-	} else {
-		username = s.Account.Username
-	}
-
-	cert, privateKey, err := s.State.ca.Generate(s.UUID, username, s.State.Config.ForceCommand)
-	if err != nil {
-		s.log.Error(
-			"Rejecting forward: failed to generate ssh certificate",
-			zap.String("id", s.UUID),
-			zap.Error(err))
-		newChannel.Reject(ssh.Prohibited, "failed to generate ssh certificate")
-		return
-	}
-
-	// Now we add the generated key and certificate to the users agent
-	err = s.Agent.Add(agent.AddedKey{
-		PrivateKey:   privateKey,
-		Certificate:  cert,
-		LifetimeSecs: 60,
-		Comment:      "temporary ssh certificate",
-	})
-
-	if err != nil {
-		s.log.Error(
-			"Rejecting forward: failed to add ssh key/cert to agent",
-			zap.String("id", s.UUID),
-			zap.Error(err))
-		newChannel.Reject(ssh.Prohibited, "failed to add ssh key/cert to agent")
-		return
-	}
-
 	// Finally, we're ready to find out where the client wants to go, and redirect
 	//  them properly.
 	var msg channelOpenDirectMsg
 	ssh.Unmarshal(newChannel.ExtraData(), &msg)
 	address := fmt.Sprintf("%s:%d", msg.RAddr, msg.RPort)
 
-	// Check the whitelist first
-	if s.Account.whitelistRe != nil {
-		if !s.Account.whitelistRe.Match([]byte(msg.RAddr)) {
-			s.log.Error(
-				"Rejecting forward: does not match whitelist",
-				zap.String("id", s.UUID),
-				zap.String("host", msg.RAddr))
-			newChannel.Reject(ssh.ConnectionFailed, "invalid permissions")
-			return
-		}
+	if !s.canConnectTo(msg.RAddr) {
+		s.log.Error("Rejecting forward: destination does not match whitelist/blacklist checks",
+			zap.String("whitelist", s.Account.Whitelist),
+			zap.String("blacklist", s.Account.Blacklist),
+			zap.String("id", s.UUID),
+			zap.String("host", msg.RAddr))
+		newChannel.Reject(ssh.ConnectionFailed, "invalid permissions")
+		return
 	}
 
-	// Then check against blacklist
-	if s.Account.blacklistRe != nil {
-		if s.Account.blacklistRe.Match([]byte(msg.RAddr)) {
-			s.log.Error(
-				"Rejecting forward: matches blacklist",
-				zap.String("id", s.UUID),
-				zap.String("host", msg.RAddr))
-			newChannel.Reject(ssh.ConnectionFailed, "invalid permissions")
-			return
-		}
+	// Now that we're verified, we must ask the SSH-CA to generate and sign a valid
+	//  SSH key/cert that we can use to login.
+	err = s.addTempAuth(msg.RAddr)
+	if err != nil {
+		s.log.Error(
+			"Rejecting forward: failed to generate or add ssh certificate",
+			zap.String("id", s.UUID),
+			zap.Error(err))
+		newChannel.Reject(ssh.Prohibited, "failed to generate or add ssh certificate")
+		return
 	}
 
-	for _, wp := range s.State.WebhookProviders {
-		wp.NotifySessionStart(s.Conn.User(), s.UUID, msg.RAddr, fmt.Sprintf("%s", s.Conn.RemoteAddr()))
-	}
+	s.notifyConnection(msg.RAddr)
 
 	conn, err := net.Dial("tcp", address)
 	if err != nil {

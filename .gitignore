@@ -4,3 +4,6 @@ recordings/
 *.db
 *.deb
 bowser
+bowser-cli
+ca
+ca.pub

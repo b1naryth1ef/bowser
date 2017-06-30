@@ -35,6 +35,7 @@ func (s *HTTPServer) registerRoutes() {
 	s.router.HandleFunc("/sessions", s.GetSessions)
 	s.router.HandleFunc("/sessions/find/{conn}", s.FindSession)
 	s.router.HandleFunc("/sessions/{uuid}", s.EndSession).Methods("DELETE")
+	s.router.HandleFunc("/sessions/{uuid}/jump", s.SessionJump).Methods("POST")
 }
 
 func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -182,4 +183,34 @@ func (s *HTTPServer) EndSession(w http.ResponseWriter, r *http.Request) {
 	} else {
 		http.NotFound(w, r)
 	}
+}
+
+// Jumps a session, adding a temp-key to the agent
+func (s *HTTPServer) SessionJump(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	session, exists := s.sshd.sessions[vars["uuid"]]
+	if !exists {
+		http.NotFound(w, r)
+		return
+	}
+
+	r.ParseForm()
+	addr, exists := r.Form["destination"]
+	if !exists {
+		http.Error(w, "Invalid Destination", 400)
+		return
+	}
+
+	// Validate the user can connect to this address
+	if !session.canConnectTo(addr[0]) {
+		http.Error(w, "Invalid Permissions", 403)
+		return
+	}
+
+	err := session.addTempAuth(addr[0])
+	if err != nil {
+		http.Error(w, "Failed to generate or add ssh certificate", 500)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

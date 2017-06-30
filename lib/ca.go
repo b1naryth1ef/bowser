@@ -51,7 +51,7 @@ func (ca *CertificateAuthority) Generate(sessionID, username, command string) (*
 		KeyId:           fmt.Sprintf("%s_%s", username, sessionID),
 		ValidPrincipals: []string{username},
 		ValidAfter:      uint64(time.Now().UTC().Add(-15 * time.Second).Unix()),
-		ValidBefore:     uint64(time.Now().UTC().Add(1 * time.Minute).Unix()),
+		ValidBefore:     uint64(time.Now().UTC().Add(30 * time.Second).Unix()),
 	}
 
 	// These are required to be set, even if they are unused
