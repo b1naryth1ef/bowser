@@ -31,13 +31,14 @@ type Account struct {
 
 // The base config which stores mostly paths and some general configuration info
 type Config struct {
-	Bind            string   `json:"bind"`
-	AccountsPath    string   `json:"accounts_path"`
-	IDRSAPath       string   `json:"id_rsa_path"`
-	CAKeyPath       string   `json:"ca_key_path"`
-	DiscordWebhooks []string `json:"discord_webhooks"`
-	ForceCommand    string   `json:"force_command"`
-	ForceUser       string   `json:"force_user"`
+	Bind                     string   `json:"bind"`
+	AccountsPath             string   `json:"accounts_path"`
+	IDRSAPath                string   `json:"id_rsa_path"`
+	CAKeyPath                string   `json:"ca_key_path"`
+	DiscordWebhooks          []string `json:"discord_webhooks"`
+	ForceCommand             string   `json:"force_command"`
+	ForceUser                string   `json:"force_user"`
+	PermittedSourceAddresses []string `json:"permitted_source_addresses"`
 }
 
 func LoadConfig(path string) (*Config, error) {

@@ -6,6 +6,7 @@ import (
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/ssh"
 	"io/ioutil"
+	"strings"
 	"time"
 )
 
@@ -34,7 +35,7 @@ func NewCertificateAuthority(keyPath string) (ca *CertificateAuthority, err erro
 }
 
 // Generate a new ed25519 keypair and SSH user certificate, then sign with our CA private key
-func (ca *CertificateAuthority) Generate(sessionID, username, command string) (*ssh.Certificate, *ed25519.PrivateKey, error) {
+func (ca *CertificateAuthority) Generate(sessionID, username, command string, sourceAddresses []string) (*ssh.Certificate, *ed25519.PrivateKey, error) {
 	edPublicKey, edPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, nil, err
@@ -63,11 +64,16 @@ func (ca *CertificateAuthority) Generate(sessionID, username, command string) (*
 		"permit-user-rc":          "",
 	}
 
+	cert.CriticalOptions = map[string]string{}
+
 	// If command is passed, add it to our critical options
 	if command != "" {
-		cert.CriticalOptions = map[string]string{
-			"force-command": command,
-		}
+		cert.CriticalOptions["force-command"] = command
+	}
+
+	// If a list of source addresses was provided, add them to critical options
+	if len(sourceAddresses) > 0 {
+		cert.CriticalOptions["source-address"] = strings.Join(sourceAddresses, ",")
 	}
 
 	cert.SignCert(rand.Reader, ca.signer)

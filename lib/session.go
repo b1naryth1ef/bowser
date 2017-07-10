@@ -200,7 +200,12 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 		username = s.Account.Username
 	}
 
-	cert, privateKey, err := s.State.ca.Generate(s.UUID, username, s.State.Config.ForceCommand)
+	cert, privateKey, err := s.State.ca.Generate(
+		s.UUID,
+		username,
+		s.State.Config.ForceCommand,
+		s.State.Config.PermittedSourceAddresses,
+	)
 	if err != nil {
 		s.log.Error(
 			"Rejecting forward: failed to generate ssh certificate",
