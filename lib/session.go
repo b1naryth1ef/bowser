@@ -200,8 +200,9 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 		username = s.Account.Username
 	}
 
+	keyID := fmt.Sprintf("user[%s] / session[%s]", s.Account.Username, s.UUID)
 	cert, privateKey, err := s.State.ca.Generate(
-		s.UUID,
+		keyID,
 		username,
 		s.State.Config.ForceCommand,
 		s.State.Config.PermittedSourceAddresses,

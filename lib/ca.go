@@ -2,7 +2,6 @@ package bowser
 
 import (
 	"crypto/rand"
-	"fmt"
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/ssh"
 	"io/ioutil"
@@ -35,7 +34,7 @@ func NewCertificateAuthority(keyPath string) (ca *CertificateAuthority, err erro
 }
 
 // Generate a new ed25519 keypair and SSH user certificate, then sign with our CA private key
-func (ca *CertificateAuthority) Generate(sessionID, username, command string, sourceAddresses []string) (*ssh.Certificate, *ed25519.PrivateKey, error) {
+func (ca *CertificateAuthority) Generate(keyID, username, command string, sourceAddresses []string) (*ssh.Certificate, *ed25519.PrivateKey, error) {
 	edPublicKey, edPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, nil, err
@@ -49,7 +48,7 @@ func (ca *CertificateAuthority) Generate(sessionID, username, command string, so
 	cert := ssh.Certificate{
 		Key:             publicKey,
 		CertType:        ssh.UserCert,
-		KeyId:           fmt.Sprintf("%s_%s", username, sessionID),
+		KeyId:           keyID,
 		ValidPrincipals: []string{username},
 		ValidAfter:      uint64(time.Now().UTC().Add(-15 * time.Second).Unix()),
 		ValidBefore:     uint64(time.Now().UTC().Add(1 * time.Minute).Unix()),
