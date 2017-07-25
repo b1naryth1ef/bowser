@@ -131,9 +131,12 @@ func (s *SSHDState) reloadAccounts() {
 	s.accounts = accounts
 	s.keys = keys
 
-	// Now, iterate over sessions and close any invalid ones
+	// Now, iterate over all active sessions and update them, closing any sessions
+	//  that point to now-invalid accounts.
 	for _, session := range s.sessions {
-		if _, exists := accounts[session.Account.Username]; !exists {
+		session.Account = accounts[session.Account.Username]
+
+		if session.Account == nil {
 			s.log.Warn(
 				"Closing session for user that was deleted from accounts",
 				zap.String("username", session.Account.Username),
