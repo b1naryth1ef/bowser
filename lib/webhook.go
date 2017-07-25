@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type MessagePayload struct {
@@ -51,23 +52,21 @@ func (d DiscordWebhookProvider) send(payload MessagePayload) (err error) {
 }
 
 func (d DiscordWebhookProvider) NotifySessionStart(platformID, username, sessionID, proxyHost, sourceHost string) error {
-	var title string
+	var desc []string
 
 	if platformID != "" {
-		title = fmt.Sprintf("<@%s>@%s", platformID, proxyHost)
+		desc = append(desc, fmt.Sprintf("**User:** <@%s>", platformID))
 	} else {
-		title = fmt.Sprintf("%s@%s", username, proxyHost)
+		desc = append(desc, fmt.Sprintf("**User:** %s", username))
 	}
 
+	desc = append(desc, fmt.Sprintf("**Host:** %s", proxyHost))
+	desc = append(desc, fmt.Sprintf("**Source:** %s", sourceHost))
+	desc = append(desc, fmt.Sprintf("**Session:** %s", sessionID))
+
 	return d.send(MessagePayload{Embeds: []Embed{Embed{
-		Title: title,
-		Description: fmt.Sprintf(
-			"**User:** %s\n**Host:** %s\n**Source:** %s\n**Session:** `%s`\n",
-			username,
-			proxyHost,
-			sourceHost,
-			sessionID,
-		),
-		Color: 16738657,
+		Title:       fmt.Sprintf("%s@%s", username, proxyHost),
+		Description: strings.Join(desc, "\n"),
+		Color:       7855479,
 	}}})
 }
