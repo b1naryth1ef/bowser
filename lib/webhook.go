@@ -19,12 +19,16 @@ type Embed struct {
 }
 
 type WebhookProvider interface {
-	NotifySessionStart(username, sessionID, proxyHost, sourceHost string) error
-	NotifySessionEnd(username, sessionID, proxyHost, sourceHost string) error
+	NotifySessionStart(platformID, username, sessionID, proxyHost, sourceHost string) error
+	PlatformName() string
 }
 
 type DiscordWebhookProvider struct {
 	URL string
+}
+
+func (d DiscordWebhookProvider) PlatformName() string {
+	return "discord"
 }
 
 func (d DiscordWebhookProvider) send(payload MessagePayload) (err error) {
@@ -46,24 +50,20 @@ func (d DiscordWebhookProvider) send(payload MessagePayload) (err error) {
 	return err
 }
 
-func (d DiscordWebhookProvider) NotifySessionStart(username, sessionID, proxyHost, sourceHost string) error {
-	return d.send(MessagePayload{Embeds: []Embed{Embed{
-		Title: fmt.Sprintf("SSH session started by %s", username),
-		Description: fmt.Sprintf(
-			"**Host:** %s\n**Source:** %s\n**Session:** `%s`\n",
-			proxyHost,
-			sourceHost,
-			sessionID,
-		),
-		Color: 7855479,
-	}}})
-}
+func (d DiscordWebhookProvider) NotifySessionStart(platformID, username, sessionID, proxyHost, sourceHost string) error {
+	var title string
 
-func (d DiscordWebhookProvider) NotifySessionEnd(username, sessionID, proxyHost, sourceHost string) error {
+	if platformID != "" {
+		title = fmt.Sprintf("<@%s>@%s", platformID, proxyHost)
+	} else {
+		title = fmt.Sprintf("%s@%s", username, proxyHost)
+	}
+
 	return d.send(MessagePayload{Embeds: []Embed{Embed{
-		Title: fmt.Sprintf("SSH session ended by %s", username),
+		Title: title,
 		Description: fmt.Sprintf(
-			"**Host:** %s\n**Source:** %s\n**Session:** `%s`\n",
+			"**User:** %s\n**Host:** %s\n**Source:** %s\n**Session:** `%s`\n",
+			username,
 			proxyHost,
 			sourceHost,
 			sessionID,

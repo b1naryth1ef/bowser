@@ -264,7 +264,8 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	}
 
 	for _, wp := range s.State.WebhookProviders {
-		wp.NotifySessionStart(s.Conn.User(), s.UUID, msg.RAddr, fmt.Sprintf("%s", s.Conn.RemoteAddr()))
+		platformID := s.Account.PlatformIDs[wp.PlatformName()]
+		wp.NotifySessionStart(platformID, s.Conn.User(), s.UUID, msg.RAddr, fmt.Sprintf("%s", s.Conn.RemoteAddr()))
 	}
 
 	conn, err := net.Dial("tcp", address)
