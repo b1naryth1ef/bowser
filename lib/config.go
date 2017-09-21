@@ -25,6 +25,7 @@ type Account struct {
 	Whitelist   string            `json:"whitelist"`
 	Blacklist   string            `json:"blacklist"`
 	PlatformIDs map[string]string `json:"platform_ids"`
+	Principals  []string          `json:"principals"`
 
 	whitelistRe *regexp.Regexp
 	blacklistRe *regexp.Regexp

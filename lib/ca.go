@@ -34,7 +34,7 @@ func NewCertificateAuthority(keyPath string) (ca *CertificateAuthority, err erro
 }
 
 // Generate a new ed25519 keypair and SSH user certificate, then sign with our CA private key
-func (ca *CertificateAuthority) Generate(keyID, username, command string, sourceAddresses []string) (*ssh.Certificate, *ed25519.PrivateKey, error) {
+func (ca *CertificateAuthority) Generate(keyID, command string, validPrincipals, sourceAddresses []string) (*ssh.Certificate, *ed25519.PrivateKey, error) {
 	edPublicKey, edPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, nil, err
@@ -49,7 +49,7 @@ func (ca *CertificateAuthority) Generate(keyID, username, command string, source
 		Key:             publicKey,
 		CertType:        ssh.UserCert,
 		KeyId:           keyID,
-		ValidPrincipals: []string{username},
+		ValidPrincipals: validPrincipals,
 		ValidAfter:      uint64(time.Now().UTC().Add(-15 * time.Second).Unix()),
 		ValidBefore:     uint64(time.Now().UTC().Add(1 * time.Minute).Unix()),
 	}
