@@ -27,7 +27,7 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-var configPath = flag.String("config", "config.json", "path to config file")
+var accountsPath = flag.String("accounts", "", "path to accounts file")
 
 func encryptTOTP(password []byte, salt []byte, totp []byte) ([]byte, error) {
 	dk := pbkdf2.Key(password, salt, 10000, 32, sha1.New)
@@ -129,14 +129,9 @@ func main() {
 		MFA:        bowser.AccountMFA{TOTP: string(totpEncrypted)},
 	}
 
-	// If the configuration path was passed, we can attempt to append this to the
-	//  accounts file.
-	if *configPath != "" {
-		config, err := bowser.LoadConfig(*configPath)
-		if err != nil {
-			fmt.Printf("Failed to load config: %v\n", err)
-			return
-		}
+	// If we're passed an accounts file, append our data to that
+	if *accountsPath != "" {
+		config := bowser.Config{AccountsPath: *accountsPath}
 
 		accounts, err := config.LoadAccounts()
 		if err != nil {
