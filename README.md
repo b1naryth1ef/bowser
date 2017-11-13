@@ -5,7 +5,7 @@ Bowser is a modern, simple, and grokable SSH daemon built to act as a bastion an
 ### Features
 - Three-Factor authentication using SSH keys, passwords, and TOTP
 - Automatic generation of signed SSH keys and certificates for access to proxied servers
-- Extensive logging too multiple outlets
+- Extensive logging to multiple outlets
 - Simple, auditable codebase
 
 ## Usage
