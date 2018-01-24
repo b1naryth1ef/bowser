@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/satori/go.uuid"
@@ -88,6 +90,8 @@ func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
 	switch newChannel.ChannelType() {
 	case "direct-tcpip":
 		s.handleChannelForward(newChannel)
+	case "session":
+		s.handleChannelSession(newChannel)
 	default:
 		s.log.Error(
 			"Rejecting channel with invalid channel type",
@@ -105,7 +109,11 @@ type channelOpenDirectMsg struct {
 	LPort uint32
 }
 
-func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
+type channelExecMsg struct {
+	Command string
+}
+
+func (s *SSHSession) authenticateChannel(newChannel ssh.NewChannel) (*agent.Agent, *ssh.Channel, bool) {
 	// Attempt to open a channel to the auth agent
 	agentChan, agentReqs, err := s.Conn.OpenChannel("auth-agent@openssh.com", nil)
 	if err != nil {
@@ -114,7 +122,7 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 			zap.String("id", s.UUID),
 			zap.Error(err))
 		newChannel.Reject(ssh.Prohibited, "you must have an ssh agent open and forwarded")
-		return
+		return nil, nil, false
 	}
 
 	// Just discard further requests
@@ -135,7 +143,7 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 				zap.String("id", s.UUID),
 				zap.Error(err))
 			newChannel.Reject(ssh.Prohibited, "agent will not give us a list of signers")
-			return
+			return nil, nil, false
 		}
 
 		// Iterate over all signers to find one with a valid publick ey
@@ -160,7 +168,7 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 					zap.String("id", s.UUID),
 					zap.Error(err))
 				newChannel.Reject(ssh.Prohibited, "cannot generate random token")
-				return
+				return nil, nil, false
 			}
 
 			// Sign the random token with the signer
@@ -171,7 +179,7 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 					zap.String("id", s.UUID),
 					zap.Error(err))
 				newChannel.Reject(ssh.Prohibited, "cannot sign random token")
-				return
+				return nil, nil, false
 			}
 
 			// Verify the signature
@@ -182,13 +190,23 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 					zap.String("id", s.UUID),
 					zap.Error(err))
 				newChannel.Reject(ssh.Prohibited, "signature verification failed")
-				return
+				return nil, nil, false
 			}
 
 			s.log.Info("Public key verification completed", zap.String("id", s.UUID))
 			s.verified = true
 			break
 		}
+	}
+
+	return &ag, &agentChan, true
+}
+
+func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
+	// First we must validate the channel
+	ag, agentChan, success := s.authenticateChannel(newChannel)
+	if !success {
+		return
 	}
 
 	// Now that we're verified, we must ask the SSH-CA to generate and sign a valid
@@ -224,7 +242,7 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	}
 
 	// Now we add the generated key and certificate to the users agent
-	err = ag.Add(agent.AddedKey{
+	err = (*ag).Add(agent.AddedKey{
 		PrivateKey:   privateKey,
 		Certificate:  cert,
 		LifetimeSecs: 60,
@@ -287,11 +305,18 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	}
 
 	channel, reqs, err := newChannel.Accept()
+	if err != nil {
+		s.log.Error(
+			"Failed to accept channel",
+			zap.String("id", s.UUID),
+			zap.Error(err))
+		return
+	}
 
 	go ssh.DiscardRequests(reqs)
 	var closer sync.Once
 	closeFunc := func() {
-		agentChan.Close()
+		(*agentChan).Close()
 		channel.Close()
 		conn.Close()
 	}
@@ -305,4 +330,73 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 		io.Copy(conn, channel)
 		closer.Do(closeFunc)
 	}()
+}
+
+func (s *SSHSession) handleChannelSession(newChannel ssh.NewChannel) {
+	// First we must validate the channel
+	_, agentChan, success := s.authenticateChannel(newChannel)
+	if !success {
+		return
+	}
+
+	channel, reqs, err := newChannel.Accept()
+	if err != nil {
+		s.log.Error(
+			"Failed to accept channel",
+			zap.String("id", s.UUID),
+			zap.Error(err))
+		return
+	}
+	defer channel.Close()
+	defer (*agentChan).Close()
+
+	for {
+		req := <-reqs
+		if req == nil {
+			return
+		}
+
+		if req.Type == "exec" {
+			msg := channelExecMsg{}
+			ssh.Unmarshal(req.Payload, &msg)
+			execContents := strings.SplitN(msg.Command, " ", 2)
+
+			if command, exists := s.State.Config.Commands[execContents[0]]; exists {
+				s.log.Info(
+					"Running command on behalf of user",
+					zap.String("command", msg.Command),
+					zap.String("id", s.UUID),
+				)
+				if command.Type == "file" {
+					if len(command.Args) != 1 {
+						s.log.Error(
+							"Failed to execute command due to incorrect number of arguments",
+							zap.String("command", execContents[0]),
+						)
+						req.Reply(false, []byte("Failed to execute due to error"))
+						return
+					}
+
+					filePath := command.Args[0]
+					contents, err := ioutil.ReadFile(filePath)
+					if err != nil {
+						s.log.Error(
+							"Failed to execute file command due to error",
+							zap.String("path", filePath),
+							zap.Error(err),
+						)
+						req.Reply(false, []byte("Failed to execute due to error"))
+						return
+					}
+
+					channel.Write(contents)
+					req.Reply(true, make([]byte, 0))
+					return
+				}
+			}
+		} else if req.Type == "shell" {
+			req.Reply(false, []byte("Invalid request"))
+			return
+		}
+	}
 }
