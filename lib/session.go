@@ -52,8 +52,11 @@ type SSHSession struct {
 	log      *zap.Logger
 }
 
-func NewSSHSession(state *SSHDState, conn *ssh.ServerConn) *SSHSession {
-	id := uuid.NewV4()
+func NewSSHSession(state *SSHDState, conn *ssh.ServerConn) (*SSHSession, error) {
+	id, err := uuid.NewV4()
+	if err != nil {
+		return nil, err
+	}
 
 	strID, _ := id.MarshalText()
 
@@ -71,7 +74,7 @@ func NewSSHSession(state *SSHDState, conn *ssh.ServerConn) *SSHSession {
 		Account: state.accounts[conn.User()],
 		Conn:    conn,
 		log:     state.log,
-	}
+	}, nil
 }
 
 func (s *SSHSession) handleChannels(chans <-chan ssh.NewChannel) {

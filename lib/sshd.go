@@ -301,7 +301,12 @@ func (s *SSHDState) handleNewConnection(tcpConn net.Conn, sshConfig *ssh.ServerC
 	}
 
 	// Open the SSH session for the connection, and track it in our sessions mapping
-	session := NewSSHSession(s, sshConn)
+	session, err := NewSSHSession(s, sshConn)
+	if err != nil {
+		s.log.Warn("Failed to create an SSH sessoin", zap.Error(err))
+		return
+	}
+
 	s.sessions[session.UUID] = session
 
 	s.log.Info(
