@@ -47,7 +47,10 @@ func (d DiscordWebhookProvider) send(payload MessagePayload) (err error) {
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
-	defer resp.Body.Close()
+	if err == nil {
+		resp.Body.Close()
+	}
+
 	return err
 }
 
