@@ -90,6 +90,15 @@ func (s *SSHSession) Close() {
 }
 
 func (s *SSHSession) handleChannel(newChannel ssh.NewChannel) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error(
+				"Failed to handleChannel due to panic",
+				zap.Any("panic", r),
+			)
+		}
+	}()
+
 	switch newChannel.ChannelType() {
 	case "direct-tcpip":
 		s.handleChannelForward(newChannel)
