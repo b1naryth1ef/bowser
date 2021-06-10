@@ -125,7 +125,7 @@ type channelExecMsg struct {
 	Command string
 }
 
-func (s *SSHSession) authenticateChannel(newChannel ssh.NewChannel) (*agent.Agent, *ssh.Channel, bool) {
+func (s *SSHSession) authenticateChannel(newChannel ssh.NewChannel) (agent.Agent, *ssh.Channel, bool) {
 	// Attempt to open a channel to the auth agent
 	agentChan, agentReqs, err := s.Conn.OpenChannel("auth-agent@openssh.com", nil)
 	if err != nil {
@@ -211,7 +211,7 @@ func (s *SSHSession) authenticateChannel(newChannel ssh.NewChannel) (*agent.Agen
 		}
 	}
 
-	return &ag, &agentChan, true
+	return ag, &agentChan, true
 }
 
 func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
@@ -254,7 +254,7 @@ func (s *SSHSession) handleChannelForward(newChannel ssh.NewChannel) {
 	}
 
 	// Now we add the generated key and certificate to the users agent
-	err = (*ag).Add(agent.AddedKey{
+	err = ag.Add(agent.AddedKey{
 		PrivateKey:   privateKey,
 		Certificate:  cert,
 		LifetimeSecs: 60,
