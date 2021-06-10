@@ -20,7 +20,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/b1naryth1ef/bowser/lib"
+	"github.com/discord/bowser/lib"
 	"github.com/mdp/qrterminal"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/pbkdf2"

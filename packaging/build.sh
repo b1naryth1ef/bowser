@@ -28,9 +28,8 @@ fpm \
   -t deb \
   -v $VERSION \
   -n bowser \
-  -m "Andrei Zbikowski <b1naryth1ef@gmail.com>" \
-  --url "https://github.com/b1naryth1ef/bowser" \
-  --deb-upstart upstart/bowser.conf \
+  -m "Discord, Inc." \
+  --url "https://github.com/discord/bowser" \
   build/=/
 
 rm -r build
