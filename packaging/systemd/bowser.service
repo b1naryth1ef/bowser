@@ -1,0 +1,11 @@
+[Unit]
+Description=bowser
+After=network.target network-online.target filesystem.target
+
+[Service]
+Type=notify
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+Environment=LC_ALL=en_US.UTF-8
+ExecStart=/usr/bin/bowser --config /etc/bowser/bowser.json
+Restart=always
+LimitNOFILE=65535
