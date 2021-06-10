@@ -1,6 +1,7 @@
-/*.json
-id_rsa
-recordings/
 *.db
 *.deb
+/*.json
 bowser
+build/
+id_rsa
+recordings/

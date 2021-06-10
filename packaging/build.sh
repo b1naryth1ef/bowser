@@ -12,14 +12,12 @@ pushd build
 mkdir -p usr/bin
 mkdir -p etc
 
-# Build bowse
-go build ../../cmd/bowser/bowser.go
-go build ../../cmd/bowser-create-account/bowser-create-account.go
+# Build bowser for 64-bit Linux
+GOOS=linux GOARCH=amd64 go build -o usr/bin/ ../../cmd/bowser
+GOOS=linux GOARCH=amd64 go build -o usr/bin/ ../../cmd/bowser-create-account
 
-# Copy files in place
-mv bowser usr/bin/
-mv bowser-create-account usr/bin/
-cp -r bowser etc/
+# Include config files
+cp -r ../bowser etc/
 
 popd
 
@@ -30,6 +28,7 @@ fpm \
   -n bowser \
   -m "Discord, Inc." \
   --url "https://github.com/discord/bowser" \
+  --deb-systemd systemd/bowser.service \
   build/=/
 
 rm -r build
